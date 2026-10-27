@@ -19,12 +19,26 @@
     <form class="ingreso__tarjeta" id="form-admin">
       <svg class="ingreso__icono" aria-hidden="true"><use href="img/iconos.svg#gota"></use></svg>
       <h1>Río<b>Alerta</b></h1>
-      <p>Acceso del administrador</p>
+      <p>Acceso de administradores</p>
+      <label for="usuario-admin">Usuario</label>
+      <input id="usuario-admin" type="text" autocomplete="username" autocapitalize="none" required autofocus>
       <label for="clave-admin">Clave</label>
-      <input id="clave-admin" type="password" autocomplete="current-password" required autofocus>
+      <input id="clave-admin" type="password" autocomplete="current-password" required>
       <p class="ingreso__error" id="error-admin" role="alert" hidden></p>
       <button class="boton boton--primario" type="submit">Entrar</button>
       <a class="ingreso__volver" href="index.html">← Volver al sitio público</a>
+    </form>
+
+    <form class="ingreso__tarjeta" id="form-clave" hidden>
+      <svg class="ingreso__icono" aria-hidden="true"><use href="img/iconos.svg#candado"></use></svg>
+      <h1>Cambie su clave</h1>
+      <p>Es su primer ingreso. Elija una clave nueva de al menos 8 caracteres.</p>
+      <label for="clave-actual">Clave actual</label>
+      <input id="clave-actual" type="password" autocomplete="current-password" required>
+      <label for="clave-nueva">Clave nueva</label>
+      <input id="clave-nueva" type="password" autocomplete="new-password" minlength="8" required>
+      <p class="ingreso__error" id="error-clave" role="alert" hidden></p>
+      <button class="boton boton--primario" type="submit">Guardar y entrar</button>
     </form>
   </main>
 
@@ -38,6 +52,7 @@
       <nav class="lateral__menu" aria-label="Secciones">
         <button class="lateral__enlace" type="button" data-vista="resumen" aria-current="page"><svg aria-hidden="true"><use href="img/iconos.svg#semaforo"></use></svg>Resumen</button>
         <button class="lateral__enlace" type="button" data-vista="datos"><svg aria-hidden="true"><use href="img/iconos.svg#carga"></use></svg>Datos nuevos</button>
+        <button class="lateral__enlace" type="button" data-vista="actividad"><svg aria-hidden="true"><use href="img/iconos.svg#reloj"></use></svg>Actividad</button>
       </nav>
       <a class="lateral__enlace lateral__enlace--pie" href="index.html"><svg aria-hidden="true"><use href="img/iconos.svg#mapa"></use></svg>Ver sitio público</a>
     </aside>
@@ -46,7 +61,7 @@
       <header class="superior">
         <button class="superior__menu" id="abrir-menu" type="button" aria-label="Abrir el menú">☰</button>
         <h1 id="titulo-vista">Resumen</h1>
-        <span class="superior__usuario"><svg aria-hidden="true"><use href="img/iconos.svg#candado"></use></svg>Administrador</span>
+        <span class="superior__usuario"><svg aria-hidden="true"><use href="img/iconos.svg#candado"></use></svg><span id="nombre-admin">Administrador</span></span>
         <button class="boton boton--contorno-oscuro boton--pequeno" id="cerrar-sesion" type="button">Cerrar sesión</button>
       </header>
 
@@ -98,6 +113,20 @@
             <div class="panel" role="tabpanel" id="adm-panel-revision" aria-labelledby="adm-pestana-revision"><p class="vacio">Aquí verá si el archivo sirve para el modelo, qué advertencias tiene y qué debe corregir.</p></div>
             <div class="panel" role="tabpanel" id="adm-panel-analisis" aria-labelledby="adm-pestana-analisis" hidden><p class="vacio">Aquí verá el análisis del archivo: calidad de los datos, estadísticas y gráficas.</p></div>
             <div class="panel" role="tabpanel" id="adm-panel-publicacion" aria-labelledby="adm-pestana-publicacion" hidden><p class="vacio">Aquí verá el resultado de la publicación y los semáforos actualizados.</p></div>
+          </article>
+        </section>
+        <!-- ---------------------------------------------------------- Actividad -->
+        <section id="vista-actividad" hidden>
+          <article class="tarjeta">
+            <h2>Quién hizo qué</h2>
+            <p class="tarjeta__texto">Cada ingreso, descarga y cambio de datos queda registrado con el nombre de quien lo hizo. Este registro no se puede editar.</p>
+            <div class="filtros">
+              <label for="filtro-usuario">Persona</label>
+              <select id="filtro-usuario"><option value="">Todas</option></select>
+              <label for="filtro-accion">Acción</label>
+              <select id="filtro-accion"><option value="">Todas</option></select>
+            </div>
+            <div id="tabla-actividad"><p class="vacio">Cargando…</p></div>
           </article>
         </section>
       </main>

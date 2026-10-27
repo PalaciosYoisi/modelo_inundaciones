@@ -111,19 +111,7 @@ body.adm { background: #eaf0f5; }
 .hallazgo__cabecera { display: flex; flex-wrap: wrap; gap: .5rem .8rem; align-items: center; margin-bottom: .3rem; }
 .hallazgo p { margin: .2rem 0; }
 .hallazgo__pie { font-size: .88rem; color: var(--texto-suave); }
-.etiqueta { display: inline-block; border-radius: 999px; padding: .12rem .75rem; font-size: .78rem; font-weight: 800; background: var(--gris); }
-.etiqueta--error, .etiqueta--rojo { background: var(--rojo-suave); color: #a12a2e; }
-.etiqueta--advertencia, .etiqueta--amarillo { background: var(--amarillo-suave); color: #8a6100; }
-.etiqueta--verde { background: var(--verde-suave); color: #1d7a48; }
-.etiqueta--gris { background: var(--gris); color: var(--texto-suave); }
 
-.tabla { overflow-x: auto; border: 1px solid var(--linea); border-radius: var(--radio); }
-.tabla table { border-collapse: collapse; width: 100%; font-size: .9rem; }
-.tabla th, .tabla td { text-align: left; padding: .65rem .9rem; border-bottom: 1px solid var(--linea); vertical-align: top; }
-.tabla th { background: var(--gris); font-weight: 800; color: var(--azul); white-space: nowrap; }
-.tabla tr:last-child td { border-bottom: 0; }
-.tabla td.num, .tabla th.num { text-align: right; font-variant-numeric: tabular-nums; }
-.tabla small { color: var(--texto-suave); }
 .notas { margin: 0; padding-left: 1.2rem; }
 .notas li { margin: .35rem 0; }
 .figuras { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.2rem; }
@@ -146,3 +134,9 @@ body.adm { background: #eaf0f5; }
   .acciones .boton { width: 100%; }
   .estado { flex-direction: column; align-items: flex-start; }
 }
+
+/* ---------------------------------------------------------------- Dos formularios en la pantalla de ingreso y filtros de la actividad */
+.ingreso__tarjeta[hidden] { display: none; }
+.filtros { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1rem; margin-bottom: 1.2rem; }
+.filtros label { font-weight: 800; }
+.filtros select { padding: .55rem .9rem; font: inherit; border: 2px solid var(--linea); border-radius: var(--radio); background: var(--blanco); color: var(--texto); }

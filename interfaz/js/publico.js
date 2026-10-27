@@ -64,6 +64,60 @@ function posibilidad(clase, texto, fraccion) {
     h("div", { clase: "posibilidad__pista" }, h("i", { style: `width:${Math.max((fraccion ?? 0) * 100, 0)}%` })));
 }
 
+// Los últimos 7 días se pueden ver como gráficas o como una tabla con una fila por día (la elección se recuerda al cambiar de estación).
+let formaDeVer = "graficas";
+const ORDEN = { Verde: 0, Amarillo: 1, Rojo: 2 };
+
+function filasPorDia(historial) {
+  const dias = new Map();
+  for (const p of historial) {
+    const dia = String(p.fecha_hora).slice(0, 10);
+    const d = dias.get(dia) ?? { dia, min: Infinity, max: -Infinity, riesgo: 0, semaforo: "Verde" };
+    d.min = Math.min(d.min, p.nivel_m);
+    d.max = Math.max(d.max, p.nivel_m);
+    d.riesgo = Math.max(d.riesgo, p.prob_rojo);
+    if (ORDEN[p.semaforo] > ORDEN[d.semaforo]) d.semaforo = p.semaforo;
+    dias.set(dia, d);
+  }
+  return [...dias.values()].reverse();
+}
+
+function tablaDias(historial) {
+  const dia = (texto) => new Date(`${texto}T12:00:00`).toLocaleDateString("es-CO", { weekday: "long", day: "numeric", month: "short" });
+  const fila = (d) => h("tr", {},
+    h("td", {}, dia(d.dia)),
+    h("td", {}, h("span", { clase: `etiqueta etiqueta--${ESTADOS[d.semaforo].clase}` }, ESTADOS[d.semaforo].titulo)),
+    h("td", { clase: "num" }, `${numero(d.min, 2)} a ${numero(d.max, 2)}`),
+    h("td", { clase: "num" }, `${Math.round(d.riesgo * 100)} %`));
+  return h("div", {},
+    h("div", { clase: "tabla" }, h("table", {},
+      h("thead", {}, h("tr", {}, h("th", {}, "Día"), h("th", {}, "Semáforo del día"), h("th", { clase: "num" }, "Nivel del río (m)"), h("th", { clase: "num" }, "Posibilidad de peligro más alta"))),
+      h("tbody", {}, filasPorDia(historial).map(fila)))),
+    h("p", { clase: "pie-detalle" }, "El semáforo del día es el más alto que se calculó en cualquier hora de ese día."));
+}
+
+function vistaDatos(historial, umbralAviso) {
+  const cuerpo = h("div", {});
+  const botones = {};
+  const pintar = () => {
+    for (const [forma, boton] of Object.entries(botones)) boton.setAttribute("aria-pressed", String(forma === formaDeVer));
+    cuerpo.replaceChildren(formaDeVer === "graficas"
+      ? h("div", { clase: "graficas" },
+        graficaLinea({ titulo: "Nivel del río en los últimos 7 días (metros)", color: "#0f4c75", formatoY: (v) => numero(v, 1),
+          puntos: historial.map((p) => ({ t: p.fecha_hora, y: p.nivel_m })) }),
+        graficaLinea({ titulo: "Posibilidad de peligro en los últimos 7 días", color: "#e5484d", yMin: 0, yMax: 1, formatoY: (v) => `${Math.round(v * 100)} %`,
+          umbral: { valor: umbralAviso, etiqueta: "Desde aquí se avisa rojo" }, puntos: historial.map((p) => ({ t: p.fecha_hora, y: p.prob_rojo })) }))
+      : tablaDias(historial));
+  };
+  for (const [forma, texto] of [["graficas", "Ver gráficas"], ["tabla", "Ver tabla"]]) {
+    botones[forma] = h("button", { type: "button", onclick: () => { formaDeVer = forma; pintar(); } }, texto);
+  }
+  pintar();
+  return h("div", { clase: "datos-estacion" },
+    h("div", { clase: "datos-estacion__cabecera" }, h("h5", {}, "Cómo ha estado el río esta semana"), h("div", { clase: "conmutador", role: "group", "aria-label": "Forma de ver los datos" }, Object.values(botones))),
+    cuerpo);
+}
+
 export function vistaDetalle(e, umbralAviso) {
   const estado = estadoDe(e);
   const historial = e.historial ?? [];
@@ -84,11 +138,7 @@ export function vistaDetalle(e, umbralAviso) {
             posibilidad("verde", "Que siga normal", e.prob_verde), posibilidad("amarillo", "Que esté alto", e.prob_amarillo), posibilidad("rojo", "Que haya peligro de crecida", e.prob_rojo)),
           h("p", {}, `Último nivel medido: ${numero(e.nivel_m, 2)} metros.`))
         : h("div", {}, h("p", {}, "Cuando la estación tenga más lecturas, aquí verá qué tan posible es cada caso."))),
-    e.semaforo ? h("div", { clase: "graficas" },
-      graficaLinea({ titulo: "Nivel del río en los últimos 7 días (metros)", color: "#0f4c75", formatoY: (v) => numero(v, 1),
-        puntos: historial.map((p) => ({ t: p.fecha_hora, y: p.nivel_m })) }),
-      graficaLinea({ titulo: "Posibilidad de peligro en los últimos 7 días", color: "#e5484d", yMin: 0, yMax: 1, formatoY: (v) => `${Math.round(v * 100)} %`,
-        umbral: { valor: umbralAviso, etiqueta: "Desde aquí se avisa rojo" }, puntos: historial.map((p) => ({ t: p.fecha_hora, y: p.prob_rojo })) })) : null,
+    e.semaforo ? vistaDatos(historial, umbralAviso) : null,
     h("p", { clase: "pie-detalle" }, "Este semáforo es una ayuda para anticiparse y no reemplaza los avisos oficiales de las autoridades."),
   ];
 }

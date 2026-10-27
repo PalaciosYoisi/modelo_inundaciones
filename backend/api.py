@@ -6,25 +6,29 @@ Recibe los archivos, llama a los módulos y devuelve los resultados:
     eda.py         análisis exploratorio de cualquier archivo
     pipeline.py    predicciones con el modelo activo
 
-Público: ver el semáforo de cada estación.   Administrador (clave): subir, revisar, analizar y publicar archivos.
+Público: ver el semáforo de cada estación.   Administradores (usuario y clave): subir, revisar, analizar y publicar archivos.
+Cada acción de un administrador queda en la auditoría (auditoria.py); usuarios.py maneja el ingreso. Ambos usan la base MySQL (base_datos.py).
 Iniciar:   uvicorn api:app --reload        Documentación y pruebas:  http://127.0.0.1:8000/docs
 """
 import io
 import math
 import os
-import secrets
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
 import numpy as np
 import pandas as pd
-from fastapi import APIRouter, Depends, FastAPI, File, Header, Query, UploadFile
+from fastapi import APIRouter, Depends, FastAPI, File, Header, Query, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
+from pydantic import BaseModel
 from starlette.exceptions import HTTPException as ErrorHTTP
 
+import auditoria
+import usuarios
+from base_datos import ErrorBaseDatos
 from eda import analizar
 from pipeline import PipelineSemaforo, normalizar_tabla
 from publicacion import Publicacion
@@ -34,7 +38,6 @@ RAIZ = Path(__file__).resolve().parents[1]
 CARPETA_MODELOS = Path(os.environ.get("SEMAFORO_MODELOS", RAIZ / "modelos"))
 CARPETA_PUBLICADO = Path(os.environ.get("SEMAFORO_PUBLICADO", RAIZ / "datos" / "publicado"))
 DATOS_INICIALES = RAIZ / "datos" / "datos_horarios.csv"
-CLAVE_ADMIN = os.environ.get("SEMAFORO_CLAVE_ADMIN", "admin")      # cámbiela antes de usar el sistema de verdad
 TAM_MAX_MB = int(os.environ.get("SEMAFORO_TAM_MAX_MB", "60"))
 EXTENSIONES = (".csv", ".xlsx")
 
@@ -124,9 +127,27 @@ def publicacion() -> Publicacion:
     return Publicacion(CARPETA_PUBLICADO, DATOS_INICIALES)
 
 
-def exigir_administrador(x_clave_admin: str | None = Header(None, description="Clave del administrador.")) -> None:
-    if not x_clave_admin or not secrets.compare_digest(x_clave_admin.encode(), CLAVE_ADMIN.encode()):
-        raise ErrorDeUsuario("La clave de administrador no es correcta.", 401, "CLAVE_INCORRECTA")
+def exigir_sesion(authorization: str | None = Header(None, description="Sesión del administrador: «Bearer <token>».")) -> dict:
+    token = authorization.removeprefix("Bearer ").strip() if authorization else ""
+    sesion = usuarios.validar_sesion(token) if token else None
+    if sesion is None:
+        raise ErrorDeUsuario("Su sesión no es válida o ya venció. Ingrese de nuevo.", 401, "SESION_INVALIDA")
+    return {**sesion, "token": token}
+
+
+def exigir_administrador(sesion: dict = Depends(exigir_sesion)) -> dict:
+    if sesion["debe_cambiar_clave"]:
+        raise ErrorDeUsuario("Antes de continuar debe cambiar la clave inicial.", 403, "CAMBIO_DE_CLAVE_PENDIENTE")
+    return sesion
+
+
+def auditar(request: Request, quien: str, accion: str, detalle: dict | None = None, estricto: bool = False) -> None:
+    """Anota la acción. Si es de las que cambian datos (estricto) y no se puede anotar, la acción no se realiza."""
+    try:
+        auditoria.registrar(quien, accion, detalle, request.client.host if request.client else None)
+    except ErrorBaseDatos:
+        if estricto:
+            raise ErrorDeUsuario("No se pudo guardar el registro de auditoría, por eso no se realizó la acción. Intente de nuevo.", 503, "AUDITORIA_NO_DISPONIBLE")
 
 
 # ------------------------------------------------------------------ aplicación y manejo de errores
@@ -146,6 +167,11 @@ def _error(estado: int, codigo: str, mensaje: str, detalle: dict | None = None) 
 @app.exception_handler(ErrorDeUsuario)
 async def _error_de_usuario(_, error: ErrorDeUsuario):
     return _error(error.estado, error.codigo, error.mensaje, error.detalle)
+
+
+@app.exception_handler(ErrorBaseDatos)
+async def _base_no_disponible(_, error: ErrorBaseDatos):
+    return _error(503, "BASE_DE_DATOS_NO_DISPONIBLE", str(error))
 
 
 @app.exception_handler(RequestValidationError)
@@ -190,37 +216,85 @@ def modelo_activo():
     return a_json_seguro(pipeline_activo().resumen_modelo())
 
 
-# ------------------------------------------------------------------ rutas del administrador (requieren clave)
-admin = APIRouter(prefix="/admin", tags=["Administrador"], dependencies=[Depends(exigir_administrador)])
+# ------------------------------------------------------------------ ingreso y cuenta del administrador
+class Credenciales(BaseModel):
+    usuario: str
+    clave: str
 
 
-@admin.get("/verificar", summary="Comprobar la clave de administrador")
-def verificar():
+class CambioDeClave(BaseModel):
+    actual: str
+    nueva: str
+
+
+@app.post("/sesion", tags=["Administrador"], summary="Ingresar con usuario y clave")
+def ingresar(datos: Credenciales, request: Request):
+    try:
+        sesion = usuarios.iniciar_sesion(datos.usuario, datos.clave)
+    except usuarios.ErrorDeAcceso as error:
+        auditar(request, datos.usuario.strip().lower() or "?", "ingreso_fallido", {"motivo": error.codigo})
+        raise ErrorDeUsuario(error.mensaje, error.estado, error.codigo)
+    auditar(request, sesion["usuario"], "ingreso")
+    return sesion
+
+
+cuenta = APIRouter(prefix="/cuenta", tags=["Administrador"], dependencies=[Depends(exigir_sesion)])
+
+
+@cuenta.get("/yo", summary="Datos de la sesión actual")
+def quien_soy(sesion: dict = Depends(exigir_sesion)):
+    return {"usuario": sesion["usuario"], "nombre": sesion["nombre"], "debe_cambiar_clave": sesion["debe_cambiar_clave"]}
+
+
+@cuenta.post("/salir", summary="Cerrar la sesión")
+def salir(request: Request, sesion: dict = Depends(exigir_sesion)):
+    usuarios.cerrar_sesion(sesion["token"])
+    auditar(request, sesion["usuario"], "salida")
     return {"estado": "ok"}
 
 
+@cuenta.post("/clave", summary="Cambiar la clave propia")
+def cambiar_clave(datos: CambioDeClave, request: Request, sesion: dict = Depends(exigir_sesion)):
+    try:
+        usuarios.cambiar_clave(sesion["usuario"], datos.actual, datos.nueva)
+    except usuarios.ErrorDeAcceso as error:
+        raise ErrorDeUsuario(error.mensaje, error.estado, error.codigo)
+    auditar(request, sesion["usuario"], "cambio_de_clave")
+    return {"estado": "ok"}
+
+
+# ------------------------------------------------------------------ rutas del administrador (requieren sesión)
+admin = APIRouter(prefix="/admin", tags=["Administrador"], dependencies=[Depends(exigir_administrador)])
+
+
 @admin.post("/validar", summary="Comprobar si un archivo es compatible con el modelo")
-def validar_archivo(archivo: UploadFile = File(..., description="CSV o Excel con las columnas del esquema del modelo.")):
+def validar_archivo(request: Request, archivo: UploadFile = File(..., description="CSV o Excel con las columnas del esquema del modelo."),
+                    sesion: dict = Depends(exigir_administrador)):
     tabla, nombre = leer_archivo(archivo)
     pipeline = pipeline_activo()
-    return a_json_seguro({"archivo": nombre, "modelo_version": pipeline.version, "validacion": validar(tabla, pipeline.metadatos)})
+    diagnostico = validar(tabla, pipeline.metadatos)
+    auditar(request, sesion["usuario"], "validar", {"archivo": nombre, "filas": len(tabla), "estado": diagnostico["estado"]})
+    return a_json_seguro({"archivo": nombre, "modelo_version": pipeline.version, "validacion": diagnostico})
 
 
 @admin.post("/analizar", summary="Análisis exploratorio automático (sirve para cualquier archivo)")
-def analizar_archivo(archivo: UploadFile = File(..., description="Cualquier CSV o Excel."),
-                     incluir_figuras: bool = Query(False, description="Incluir las gráficas como imágenes PNG en base64.")):
+def analizar_archivo(request: Request, archivo: UploadFile = File(..., description="Cualquier CSV o Excel."),
+                     incluir_figuras: bool = Query(False, description="Incluir las gráficas como imágenes PNG en base64."),
+                     sesion: dict = Depends(exigir_administrador)):
     tabla, nombre = leer_archivo(archivo)
     resultado, figuras = analizar(tabla, nombre)
+    auditar(request, sesion["usuario"], "analizar", {"archivo": nombre, "filas": len(tabla)})
     return a_json_seguro({"archivo": nombre, "resultado": resultado,
                           "figuras": figuras if incluir_figuras else [{"id": f["id"], "titulo": f["titulo"]} for f in figuras]})
 
 
 @admin.post("/predecir", summary="Predecir con un archivo, sin publicarlo (solo archivos compatibles)",
             responses={422: {"description": "El archivo no es compatible con el modelo; el cuerpo trae el diagnóstico."}})
-def predecir(archivo: UploadFile = File(..., description="CSV o Excel con las columnas del esquema del modelo."),
+def predecir(request: Request, archivo: UploadFile = File(..., description="CSV o Excel con las columnas del esquema del modelo."),
              solo_ultima_hora: bool = Query(False, description="Predecir solo la última hora con nivel de cada estación."),
              formato: Literal["json", "csv"] = Query("json", description="json: resumen y primeras predicciones. csv: todas, para descargar."),
-             limite: int = Query(200, ge=1, le=5000, description="Cuántas predicciones incluir en la respuesta json.")):
+             limite: int = Query(200, ge=1, le=5000, description="Cuántas predicciones incluir en la respuesta json."),
+             sesion: dict = Depends(exigir_administrador)):
     tabla, nombre = leer_archivo(archivo)
     pipeline = pipeline_activo()
     diagnostico = validar(tabla, pipeline.metadatos)
@@ -229,6 +303,7 @@ def predecir(archivo: UploadFile = File(..., description="CSV o Excel con las co
                              "corrija el archivo y cárguelo de nuevo.", 422, "ARCHIVO_INCOMPATIBLE", {"diagnostico": diagnostico})
     predicciones = pipeline.predecir(tabla, solo_ultima_hora)
     salida = pipeline.tabla_de_salida(predicciones)
+    auditar(request, sesion["usuario"], "descargar_predicciones" if formato == "csv" else "predecir", {"archivo": nombre, "filas": len(salida)})
     if formato == "csv":
         return Response(content=salida.to_csv(index=False).encode("utf-8-sig"), media_type="text/csv; charset=utf-8",
                         headers={"Content-Disposition": f'attachment; filename="predicciones_{Path(nombre).stem}.csv"'})
@@ -239,15 +314,24 @@ def predecir(archivo: UploadFile = File(..., description="CSV o Excel con las co
 
 @admin.post("/publicar", summary="Agregar las lecturas del archivo y actualizar los semáforos que ve el público",
             responses={422: {"description": "El archivo no es compatible con el modelo; no se publicó nada."}})
-def publicar(archivo: UploadFile = File(..., description="CSV o Excel con lecturas nuevas (pueden ser pocas horas).")):
+def publicar(request: Request, archivo: UploadFile = File(..., description="CSV o Excel con lecturas nuevas (pueden ser pocas horas)."),
+             sesion: dict = Depends(exigir_administrador)):
     tabla, nombre = leer_archivo(archivo)
     pipeline = pipeline_activo()
     diagnostico = validar(tabla, pipeline.metadatos, exigir_historia=False)     # las lecturas nuevas se suman a las ya publicadas
     if diagnostico["resumen"]["errores"]:
+        auditar(request, sesion["usuario"], "publicar_rechazado", {"archivo": nombre, "errores": diagnostico["resumen"]["errores"]})
         raise ErrorDeUsuario("El archivo tiene errores, por eso no se publicó nada. Revise el diagnóstico, corríjalo y cárguelo de nuevo.",
                              422, "ARCHIVO_INCOMPATIBLE", {"diagnostico": diagnostico})
+    auditar(request, sesion["usuario"], "publicar", {"archivo": nombre, "filas": len(tabla)}, estricto=True)
     cambios = publicacion().integrar(normalizar_tabla(tabla), pipeline.codigos)
     return a_json_seguro({"archivo": nombre, "validacion": diagnostico, "cambios": cambios, **publicacion().estaciones(pipeline)})
 
 
+@admin.get("/actividad", summary="Registro de auditoría: quién hizo qué")
+def actividad(usuario: str | None = Query(None), accion: str | None = Query(None), limite: int = Query(100, ge=1, le=500)):
+    return a_json_seguro(auditoria.listar(usuario, accion, limite))
+
+
+app.include_router(cuenta)
 app.include_router(admin)

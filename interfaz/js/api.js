@@ -10,16 +10,16 @@ export class ErrorApi extends Error {
   }
 }
 
-// La clave del administrador vive solo mientras esté abierta la pestaña.
+// La sesión del administrador vive solo mientras esté abierta la pestaña (nunca se guarda la clave, solo el permiso temporal).
 export const sesion = {
-  clave: () => sessionStorage.getItem("claveAdmin"),
-  guardar: (clave) => sessionStorage.setItem("claveAdmin", clave),
-  cerrar: () => sessionStorage.removeItem("claveAdmin"),
+  token: () => sessionStorage.getItem("sesionAdmin"),
+  guardar: (token) => sessionStorage.setItem("sesionAdmin", token),
+  cerrar: () => sessionStorage.removeItem("sesionAdmin"),
 };
 
-async function pedir(ruta, { clave = null, ...opciones } = {}) {
+async function pedir(ruta, { conSesion = false, ...opciones } = {}) {
   const encabezados = { ...(opciones.headers ?? {}) };
-  if (clave !== null) encabezados["X-Clave-Admin"] = clave;
+  if (conSesion) encabezados.Authorization = `Bearer ${sesion.token() ?? ""}`;
   let respuesta;
   try {
     respuesta = await fetch(API_URL + ruta, { ...opciones, headers: encabezados });
@@ -37,7 +37,7 @@ async function pedir(ruta, { clave = null, ...opciones } = {}) {
 const conArchivo = (archivo) => {
   const formulario = new FormData();
   formulario.append("archivo", archivo, archivo.name);
-  return { method: "POST", body: formulario, clave: sesion.clave() ?? "" };
+  return { method: "POST", body: formulario, conSesion: true };
 };
 
 // ------------------------------------------------------------------ Público
@@ -46,7 +46,16 @@ export const estacion = async (codigo) => (await pedir(`/estaciones/${encodeURIC
 export const modeloActivo = async () => (await pedir("/modelo/activo")).json();
 
 // ------------------------------------------------------------------ Administrador
-export const verificarClave = async (clave) => (await pedir("/admin/verificar", { clave })).json();
+const json = (datos) => ({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(datos) });
+
+export const ingresar = async (usuario, clave) => (await pedir("/sesion", json({ usuario, clave }))).json();
+export const quienSoy = async () => (await pedir("/cuenta/yo", { conSesion: true })).json();
+export const salir = async () => (await pedir("/cuenta/salir", { method: "POST", conSesion: true })).json();
+export const cambiarClave = async (actual, nueva) => (await pedir("/cuenta/clave", { ...json({ actual, nueva }), conSesion: true })).json();
+export const actividad = async (usuario, accion) => {
+  const filtros = new URLSearchParams({ ...(usuario && { usuario }), ...(accion && { accion }) });
+  return (await pedir(`/admin/actividad?${filtros}`, { conSesion: true })).json();
+};
 export const validar = async (archivo) => (await pedir("/admin/validar", conArchivo(archivo))).json();
 export const analizar = async (archivo) => (await pedir("/admin/analizar?incluir_figuras=true", conArchivo(archivo))).json();
 export const publicar = async (archivo) => (await pedir("/admin/publicar", conArchivo(archivo))).json();

@@ -9,51 +9,92 @@ const paneles = { revision: $("adm-panel-revision"), analisis: $("adm-panel-anal
 const pestanas = { revision: $("adm-pestana-revision"), analisis: $("adm-pestana-analisis"), publicacion: $("adm-pestana-publicacion") };
 const iniciales = new Map(Object.values(paneles).map((p) => [p, [...p.childNodes].map((n) => n.cloneNode(true))]));
 let archivo = null;
+let yo = null;
 
 // ------------------------------------------------------------------ Ingreso y salida
-function mostrarPanel(visible) {
-  $("ingreso").hidden = visible;
-  $("panel-admin").hidden = !visible;
-  if (visible) cargarResumen();
-  else $("clave-admin").focus();
+const mostrar = (nodo, visible) => { nodo.hidden = !visible; };
+
+function mostrarPanel(visible, persona = null) {
+  mostrar($("ingreso"), !visible);
+  mostrar($("panel-admin"), visible);
+  if (visible) {
+    $("nombre-admin").textContent = persona?.nombre ?? "Administrador";
+    irAVista("resumen");
+  } else {
+    mostrar($("form-admin"), true);
+    mostrar($("form-clave"), false);
+    $("usuario-admin").focus();
+  }
 }
+
+function entrar(persona) {
+  if (persona.debe_cambiar_clave) {               // primer ingreso: antes de nada hay que elegir una clave propia
+    mostrar($("form-admin"), false);
+    mostrar($("form-clave"), true);
+    $("clave-actual").focus();
+  } else {
+    mostrarPanel(true, persona);
+  }
+}
+
+const textoDeError = (error) => (error.estado === 401 || error.estado === 429 || error.estado === 400 ? error.message : "No se pudo completar. Intente de nuevo en unos minutos.");
 
 $("form-admin").addEventListener("submit", async (evento) => {
   evento.preventDefault();
   try {
-    await api.verificarClave($("clave-admin").value);
-    api.sesion.guardar($("clave-admin").value);
+    const persona = await api.ingresar($("usuario-admin").value, $("clave-admin").value);
+    api.sesion.guardar(persona.token);
+    yo = persona;
     $("error-admin").hidden = true;
     $("clave-admin").value = "";
-    mostrarPanel(true);
+    entrar(persona);
   } catch (error) {
-    $("error-admin").textContent = error.codigo === "CLAVE_INCORRECTA" ? "La clave no es correcta. Intente de nuevo." : error.message;
+    $("error-admin").textContent = textoDeError(error);
     $("error-admin").hidden = false;
   }
 });
 
-$("cerrar-sesion").addEventListener("click", () => { api.sesion.cerrar(); elegir(null); mostrarPanel(false); });
+$("form-clave").addEventListener("submit", async (evento) => {
+  evento.preventDefault();
+  try {
+    await api.cambiarClave($("clave-actual").value, $("clave-nueva").value);
+    $("form-clave").reset();
+    $("error-clave").hidden = true;
+    mostrarPanel(true, yo);
+  } catch (error) {
+    $("error-clave").textContent = error.message;
+    $("error-clave").hidden = false;
+  }
+});
 
-if (api.sesion.clave()) {                         // si la pestaña ya tenía una sesión, se recupera sin molestar
-  api.verificarClave(api.sesion.clave()).then(() => mostrarPanel(true)).catch(() => api.sesion.cerrar());
+function cerrarSesion() {
+  api.salir().catch(() => {});                    // si no se puede avisar al servidor, igual se cierra aquí
+  api.sesion.cerrar();
+  yo = null;
+  elegir(null);
+  mostrarPanel(false);
+}
+$("cerrar-sesion").addEventListener("click", cerrarSesion);
+
+if (api.sesion.token()) {                         // si la pestaña ya tenía una sesión, se recupera sin molestar
+  api.quienSoy().then((persona) => { yo = persona; entrar(persona); }).catch(() => api.sesion.cerrar());
 }
 
 // ------------------------------------------------------------------ Menú lateral
-const TITULOS = { resumen: "Resumen", datos: "Datos nuevos" };
+const TITULOS = { resumen: "Resumen", datos: "Datos nuevos", actividad: "Actividad" };
 
 function irAVista(vista) {
   for (const enlace of document.querySelectorAll("[data-vista]")) {
     if (enlace.dataset.vista === vista) enlace.setAttribute("aria-current", "page"); else enlace.removeAttribute("aria-current");
   }
-  $("vista-resumen").hidden = vista !== "resumen";
-  $("vista-datos").hidden = vista !== "datos";
+  for (const nombre of Object.keys(TITULOS)) mostrar($(`vista-${nombre}`), nombre === vista);
   $("titulo-vista").textContent = TITULOS[vista];
   $("lateral").classList.remove("lateral--abierto");
   if (vista === "resumen") cargarResumen();
+  if (vista === "actividad") cargarActividad();
 }
 document.querySelectorAll("[data-vista]").forEach((e) => e.addEventListener("click", () => irAVista(e.dataset.vista)));
 $("abrir-menu").addEventListener("click", () => $("lateral").classList.toggle("lateral--abierto"));
-
 // ------------------------------------------------------------------ Resumen
 const COLOR = { Verde: "verde", Amarillo: "amarillo", Rojo: "rojo" };
 
@@ -153,7 +194,7 @@ async function ejecutar(textoCarga, tarea) {
     await tarea();
     ocultarAviso();
   } catch (error) {
-    if (error.estado === 401) {                   // la clave dejó de valer: se vuelve a pedir
+    if (error.estado === 401) {                   // la sesión venció: se vuelve a pedir el ingreso
       api.sesion.cerrar();
       mostrarPanel(false);
     }
@@ -194,3 +235,38 @@ async function descargar() {
     URL.revokeObjectURL(enlace.href);
   });
 }
+
+// ------------------------------------------------------------------ Actividad (auditoría)
+const ACCIONES = {
+  ingreso: "Ingresó", ingreso_fallido: "Intento de ingreso fallido", salida: "Cerró sesión", cambio_de_clave: "Cambió su clave",
+  validar: "Revisó un archivo", analizar: "Analizó un archivo", predecir: "Hizo predicciones con un archivo",
+  descargar_predicciones: "Descargó predicciones", publicar: "Publicó datos", publicar_rechazado: "Intentó publicar un archivo con errores",
+};
+const cuentaDe = (r) => {
+  const d = r.detalle ?? {};
+  return [d.archivo && `Archivo: ${d.archivo}`, d.filas !== undefined && `${numero(d.filas)} filas`, d.errores && `${d.errores} errores`, d.motivo && `Motivo: ${d.motivo}`].filter(Boolean).join(" · ");
+};
+
+async function cargarActividad() {
+  try {
+    const d = await api.actividad($("filtro-usuario").value, $("filtro-accion").value);
+    const llenar = (selector, valores, texto) => {
+      const elegido = selector.value;
+      reemplazar(selector, h("option", { value: "" }, "Todas"), valores.map((v) => h("option", { value: v }, texto(v))));
+      selector.value = valores.includes(elegido) ? elegido : "";
+    };
+    llenar($("filtro-usuario"), d.usuarios, (v) => v);
+    llenar($("filtro-accion"), d.acciones, (v) => ACCIONES[v] ?? v);
+    reemplazar($("tabla-actividad"), d.registros.length
+      ? h("div", { clase: "tabla" }, h("table", {},
+        h("thead", {}, h("tr", {}, ["Cuándo", "Quién", "Qué hizo", "Detalle"].map((x) => h("th", {}, x)))),
+        h("tbody", {}, d.registros.map((r) => h("tr", {}, h("td", {}, fecha(r.fecha)), h("td", {}, h("b", {}, r.usuario)),
+          h("td", {}, ACCIONES[r.accion] ?? r.accion), h("td", {}, cuentaDe(r)))))))
+      : h("p", { clase: "vacio" }, "Todavía no hay actividad con ese filtro."));
+  } catch (error) {
+    if (error.estado === 401) { api.sesion.cerrar(); mostrarPanel(false); }
+    reemplazar($("tabla-actividad"), h("p", { clase: "vacio" }, error.message));
+  }
+}
+$("filtro-usuario").addEventListener("change", cargarActividad);
+$("filtro-accion").addEventListener("change", cargarActividad);
