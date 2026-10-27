@@ -54,13 +54,6 @@
 .notas-banda li { position: relative; padding: .7rem 0 .7rem 1.8rem; color: rgba(255, 255, 255, .86); border-bottom: 1px solid rgba(255, 255, 255, .1); }
 .notas-banda li::before { content: ""; position: absolute; left: 0; top: 1.15rem; width: .7rem; height: .7rem; border-radius: 50%; background: var(--agua); }
 
-/* ---------------------------------------------------------------- Panel del administrador */
-.seccion--admin { background: #eaf0f5; border-top: 6px solid var(--agua); }
-.seccion--admin[hidden] { display: none; }
-.admin__cabecera { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1.5rem; align-items: flex-start; margin-bottom: 2rem; }
-.admin__cabecera h2 { font-size: clamp(1.8rem, 3.5vw, 2.5rem); font-weight: 900; }
-.admin__cabecera p { color: var(--texto-suave); max-width: 60ch; margin: 0; }
-
 /* ---------------------------------------------------------------- Pie */
 .pie { background: #041020; color: rgba(255, 255, 255, .7); padding: 2.2rem 0; font-size: .9rem; }
 .pie__interior { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem 2rem; }

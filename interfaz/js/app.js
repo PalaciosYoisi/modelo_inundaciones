@@ -1,6 +1,5 @@
-// Punto de entrada: carga las estaciones, conecta el mapa con la lista y el detalle, y arranca el panel del administrador.
+// Punto de entrada de la página pública: carga las estaciones y conecta el mapa con la lista y el detalle.
 import * as api from "./api.js";
-import { iniciarAdmin } from "./admin.js";
 import { h, reemplazar } from "./dom.js";
 import { crearMapa, vistaConfianza, vistaDetalle, vistaLista } from "./publico.js";
 
@@ -57,6 +56,5 @@ const marcarBarra = () => barra.classList.toggle("barra--solida", window.scrollY
 window.addEventListener("scroll", marcarBarra, { passive: true });
 marcarBarra();
 
-iniciarAdmin({ alPublicar: cargarEstaciones });
 cargarEstaciones();
 cargarConfianza();

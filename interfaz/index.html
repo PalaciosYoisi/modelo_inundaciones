@@ -28,9 +28,9 @@
         <a href="#como-se-lee">Cómo se lee</a>
         <a href="#modelo">Qué tan confiable es</a>
       </nav>
-      <button class="boton-icono" id="abrir-admin" type="button">
+      <a class="boton-icono" href="admin.html">
         <svg aria-hidden="true"><use href="img/iconos.svg#candado"></use></svg><span>Administrador</span>
-      </button>
+      </a>
     </div>
   </header>
 
@@ -108,55 +108,6 @@
         </ul>
       </div>
     </section>
-
-    <!-- ============================================================ Panel del administrador (oculto hasta iniciar sesión) -->
-    <section class="seccion seccion--admin" id="admin" hidden>
-      <div class="contenedor">
-        <header class="admin__cabecera">
-          <div>
-            <p class="kicker">Administrador</p>
-            <h2>Publicar datos nuevos</h2>
-            <p>Suba un archivo con lecturas recientes. Primero se revisa; si está bien, se agrega y los semáforos que ve el público se actualizan.</p>
-          </div>
-          <button class="boton boton--contorno-oscuro boton--pequeno" id="cerrar-sesion" type="button">Cerrar sesión</button>
-        </header>
-
-        <div class="taller">
-          <div class="carga" id="adm-zona-carga">
-            <input class="carga__entrada" id="adm-archivo" type="file" accept=".csv,.xlsx" aria-label="Elegir archivo CSV o Excel">
-            <label class="carga__area" for="adm-archivo" id="adm-area-carga">
-              <span class="icono-circulo icono-circulo--grande"><svg aria-hidden="true"><use href="img/iconos.svg#carga"></use></svg></span>
-              <span class="carga__titulo">Arrastre el archivo aquí o haga clic para elegirlo</span>
-              <span class="carga__ayuda">CSV o Excel · columnas: <code>estacion</code>, <code>fecha_hora</code>, <code>nivel_m</code>, <code>lluvia_mm</code></span>
-            </label>
-            <div class="carga__elegido" id="adm-archivo-elegido" hidden>
-              <svg aria-hidden="true"><use href="img/iconos.svg#archivo"></use></svg>
-              <span><b id="adm-archivo-nombre"></b><small id="adm-archivo-detalle"></small></span>
-              <button class="boton-texto" id="adm-quitar" type="button">Quitar</button>
-            </div>
-            <p class="carga__ejemplos">Archivos de prueba:
-              <a href="ejemplos/ejemplo_compatible.csv" download>correcto</a> · <a href="ejemplos/ejemplo_incompatible.csv" download>con errores</a></p>
-          </div>
-
-          <div class="acciones" role="group" aria-label="Qué hacer con el archivo">
-            <button class="boton boton--contorno-oscuro" id="adm-revisar" type="button" disabled><svg aria-hidden="true"><use href="img/iconos.svg#escudo"></use></svg>Revisar archivo</button>
-            <button class="boton boton--contorno-oscuro" id="adm-analizar" type="button" disabled><svg aria-hidden="true"><use href="img/iconos.svg#grafica"></use></svg>Analizar datos</button>
-            <button class="boton boton--primario" id="adm-publicar" type="button" disabled><svg aria-hidden="true"><use href="img/iconos.svg#semaforo"></use></svg>Publicar datos</button>
-          </div>
-
-          <div class="aviso" id="adm-aviso" role="status" aria-live="polite" hidden></div>
-
-          <div class="pestanas" role="tablist" aria-label="Resultados">
-            <button class="pestana" role="tab" id="adm-pestana-revision" aria-controls="adm-panel-revision" aria-selected="true" type="button">Revisión</button>
-            <button class="pestana" role="tab" id="adm-pestana-analisis" aria-controls="adm-panel-analisis" aria-selected="false" type="button">Análisis</button>
-            <button class="pestana" role="tab" id="adm-pestana-publicacion" aria-controls="adm-panel-publicacion" aria-selected="false" type="button">Publicación</button>
-          </div>
-          <div class="panel" role="tabpanel" id="adm-panel-revision" aria-labelledby="adm-pestana-revision"><p class="vacio">Aquí verá si el archivo sirve para el modelo, qué advertencias tiene y qué debe corregir.</p></div>
-          <div class="panel" role="tabpanel" id="adm-panel-analisis" aria-labelledby="adm-pestana-analisis" hidden><p class="vacio">Aquí verá el análisis del archivo: calidad de los datos, estadísticas y gráficas.</p></div>
-          <div class="panel" role="tabpanel" id="adm-panel-publicacion" aria-labelledby="adm-pestana-publicacion" hidden><p class="vacio">Aquí verá el resultado de la publicación y los semáforos actualizados.</p></div>
-        </div>
-      </div>
-    </section>
   </main>
 
   <footer class="pie">
@@ -165,21 +116,6 @@
       <p>Datos de nivel y lluvia del IDEAM (datos.gov.co). Mapa © colaboradores de OpenStreetMap.</p>
     </div>
   </footer>
-
-  <!-- ============================================================ Ingreso del administrador -->
-  <dialog class="dialogo" id="dialogo-admin" aria-labelledby="titulo-admin">
-    <form id="form-admin" method="dialog">
-      <h2 id="titulo-admin">Acceso del administrador</h2>
-      <p>Solo quien administra el sistema puede subir archivos de datos.</p>
-      <label for="clave-admin">Clave</label>
-      <input id="clave-admin" type="password" autocomplete="current-password" required>
-      <p class="dialogo__error" id="error-admin" role="alert" hidden></p>
-      <div class="dialogo__acciones">
-        <button class="boton-texto" id="cancelar-admin" type="button">Cancelar</button>
-        <button class="boton boton--primario boton--pequeno" type="submit">Entrar</button>
-      </div>
-    </form>
-  </dialog>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module" src="js/app.js"></script>

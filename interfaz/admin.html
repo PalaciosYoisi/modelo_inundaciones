@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Administración · Río Alerta</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Mulish:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/componentes.css">
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body class="adm">
+
+  <!-- ============================================================ Ingreso -->
+  <main class="ingreso" id="ingreso">
+    <form class="ingreso__tarjeta" id="form-admin">
+      <svg class="ingreso__icono" aria-hidden="true"><use href="img/iconos.svg#gota"></use></svg>
+      <h1>Río<b>Alerta</b></h1>
+      <p>Acceso del administrador</p>
+      <label for="clave-admin">Clave</label>
+      <input id="clave-admin" type="password" autocomplete="current-password" required autofocus>
+      <p class="ingreso__error" id="error-admin" role="alert" hidden></p>
+      <button class="boton boton--primario" type="submit">Entrar</button>
+      <a class="ingreso__volver" href="index.html">← Volver al sitio público</a>
+    </form>
+  </main>
+
+  <!-- ============================================================ Panel -->
+  <div class="panel-admin" id="panel-admin" hidden>
+    <aside class="lateral" id="lateral">
+      <a class="marca" href="admin.html" aria-label="Río Alerta, administración">
+        <svg class="marca__icono" aria-hidden="true"><use href="img/iconos.svg#gota"></use></svg>
+        <span class="marca__texto"><span class="marca__nombre">RÍO<b>ALERTA</b></span><small>Administración</small></span>
+      </a>
+      <nav class="lateral__menu" aria-label="Secciones">
+        <button class="lateral__enlace" type="button" data-vista="resumen" aria-current="page"><svg aria-hidden="true"><use href="img/iconos.svg#semaforo"></use></svg>Resumen</button>
+        <button class="lateral__enlace" type="button" data-vista="datos"><svg aria-hidden="true"><use href="img/iconos.svg#carga"></use></svg>Datos nuevos</button>
+      </nav>
+      <a class="lateral__enlace lateral__enlace--pie" href="index.html"><svg aria-hidden="true"><use href="img/iconos.svg#mapa"></use></svg>Ver sitio público</a>
+    </aside>
+
+    <div class="cuerpo">
+      <header class="superior">
+        <button class="superior__menu" id="abrir-menu" type="button" aria-label="Abrir el menú">☰</button>
+        <h1 id="titulo-vista">Resumen</h1>
+        <span class="superior__usuario"><svg aria-hidden="true"><use href="img/iconos.svg#candado"></use></svg>Administrador</span>
+        <button class="boton boton--contorno-oscuro boton--pequeno" id="cerrar-sesion" type="button">Cerrar sesión</button>
+      </header>
+
+      <main class="contenido">
+        <!-- ---------------------------------------------------------- Resumen -->
+        <section id="vista-resumen" aria-labelledby="titulo-vista">
+          <div class="indicadores" id="indicadores" aria-live="polite"></div>
+          <article class="tarjeta">
+            <h2>Estaciones publicadas</h2>
+            <p class="tarjeta__texto">Así ve el público cada estación en este momento.</p>
+            <div id="tabla-estaciones"><p class="vacio">Cargando…</p></div>
+          </article>
+        </section>
+
+        <!-- ---------------------------------------------------------- Datos nuevos -->
+        <section id="vista-datos" hidden>
+          <article class="tarjeta">
+            <h2>Archivo de lecturas</h2>
+            <p class="tarjeta__texto">Suba un archivo con lecturas recientes. Primero se revisa; si está bien, se agrega y los semáforos del público se actualizan.</p>
+            <div class="carga" id="adm-zona-carga">
+              <input class="carga__entrada" id="adm-archivo" type="file" accept=".csv,.xlsx" aria-label="Elegir archivo CSV o Excel">
+              <label class="carga__area" for="adm-archivo" id="adm-area-carga">
+                <span class="icono-circulo icono-circulo--grande"><svg aria-hidden="true"><use href="img/iconos.svg#carga"></use></svg></span>
+                <span class="carga__titulo">Arrastre el archivo aquí o haga clic para elegirlo</span>
+                <span class="carga__ayuda">CSV o Excel · columnas: <code>estacion</code>, <code>fecha_hora</code>, <code>nivel_m</code>, <code>lluvia_mm</code></span>
+              </label>
+              <div class="carga__elegido" id="adm-archivo-elegido" hidden>
+                <svg aria-hidden="true"><use href="img/iconos.svg#archivo"></use></svg>
+                <span><b id="adm-archivo-nombre"></b><small id="adm-archivo-detalle"></small></span>
+                <button class="boton-texto" id="adm-quitar" type="button">Quitar</button>
+              </div>
+              <p class="carga__ejemplos">Archivos de prueba:
+                <a href="ejemplos/ejemplo_compatible.csv" download>correcto</a> · <a href="ejemplos/ejemplo_incompatible.csv" download>con errores</a></p>
+            </div>
+            <div class="acciones" role="group" aria-label="Qué hacer con el archivo">
+              <button class="boton boton--contorno-oscuro" id="adm-revisar" type="button" disabled><svg aria-hidden="true"><use href="img/iconos.svg#escudo"></use></svg>Revisar archivo</button>
+              <button class="boton boton--contorno-oscuro" id="adm-analizar" type="button" disabled><svg aria-hidden="true"><use href="img/iconos.svg#grafica"></use></svg>Analizar datos</button>
+              <button class="boton boton--primario" id="adm-publicar" type="button" disabled><svg aria-hidden="true"><use href="img/iconos.svg#semaforo"></use></svg>Publicar datos</button>
+            </div>
+            <div class="aviso" id="adm-aviso" role="status" aria-live="polite" hidden></div>
+          </article>
+
+          <article class="tarjeta">
+            <div class="pestanas" role="tablist" aria-label="Resultados">
+              <button class="pestana" role="tab" id="adm-pestana-revision" aria-controls="adm-panel-revision" aria-selected="true" type="button">Revisión</button>
+              <button class="pestana" role="tab" id="adm-pestana-analisis" aria-controls="adm-panel-analisis" aria-selected="false" type="button">Análisis</button>
+              <button class="pestana" role="tab" id="adm-pestana-publicacion" aria-controls="adm-panel-publicacion" aria-selected="false" type="button">Publicación</button>
+            </div>
+            <div class="panel" role="tabpanel" id="adm-panel-revision" aria-labelledby="adm-pestana-revision"><p class="vacio">Aquí verá si el archivo sirve para el modelo, qué advertencias tiene y qué debe corregir.</p></div>
+            <div class="panel" role="tabpanel" id="adm-panel-analisis" aria-labelledby="adm-pestana-analisis" hidden><p class="vacio">Aquí verá el análisis del archivo: calidad de los datos, estadísticas y gráficas.</p></div>
+            <div class="panel" role="tabpanel" id="adm-panel-publicacion" aria-labelledby="adm-pestana-publicacion" hidden><p class="vacio">Aquí verá el resultado de la publicación y los semáforos actualizados.</p></div>
+          </article>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script type="module" src="js/admin.js"></script>
+</body>
+</html>
