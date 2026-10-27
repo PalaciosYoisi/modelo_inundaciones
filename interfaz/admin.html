@@ -43,7 +43,7 @@
     </form>
   </main>
 
-  <!-- ============================================================ Panel -->
+  <!--  Panel -->
   <div class="panel-admin" id="panel-admin" hidden>
     <aside class="lateral" id="lateral">
       <a class="marca" href="admin.html" aria-label="Río Alerta, administración">
@@ -70,7 +70,7 @@
       </header>
 
       <main class="contenido">
-        <!-- ---------------------------------------------------------- Resumen -->
+        <!--  Resumen -->
         <section id="vista-resumen" aria-labelledby="titulo-vista">
           <div class="aviso-lote" id="aviso-lote" hidden>
             <span>Hay datos nuevos de datos.gov.co esperando su revisión.</span>
@@ -84,7 +84,7 @@
           </article>
         </section>
 
-        <!-- ---------------------------------------------------------- Consulta diaria -->
+        <!--  Consulta diaria -->
         <section id="vista-consulta" hidden>
           <article class="tarjeta">
             <h2>Datos nuevos de datos.gov.co</h2>
@@ -96,46 +96,34 @@
           <article class="tarjeta" id="cons-detalle" hidden></article>
         </section>
 
-        <!-- ---------------------------------------------------------- Datos nuevos -->
+        <!-- Cargar archivos -->
         <section id="vista-datos" hidden>
           <article class="tarjeta">
-            <h2>Cargar un archivo de lecturas</h2>
-            <p class="tarjeta__texto">Suba un archivo con lecturas recientes. Primero se revisa; si está bien, se agrega y los semáforos del público se actualizan.</p>
+            <h2>Cargar archivos de datos</h2>
+            <p class="tarjeta__texto">Suba los archivos tal como los descargó de datos.gov.co (nivel instantáneo y lluvia), uno por uno o varios a la vez, o un archivo ya combinado. El sistema reconoce cada uno, lo revisa y los unifica en un lote que usted revisa antes de enviarlo al modelo.</p>
             <div class="carga" id="adm-zona-carga">
-              <input class="carga__entrada" id="adm-archivo" type="file" accept=".csv,.xlsx" aria-label="Elegir archivo CSV o Excel">
+              <input class="carga__entrada" id="adm-archivo" type="file" accept=".csv,.xlsx" multiple aria-label="Elegir archivos CSV o Excel">
               <label class="carga__area" for="adm-archivo" id="adm-area-carga">
                 <span class="icono-circulo icono-circulo--grande"><svg aria-hidden="true"><use href="img/iconos.svg#carga"></use></svg></span>
-                <span class="carga__titulo">Arrastre el archivo aquí o haga clic para elegirlo</span>
-                <span class="carga__ayuda">CSV o Excel · columnas: <code>estacion</code>, <code>fecha_hora</code>, <code>nivel_m</code>, <code>lluvia_mm</code></span>
+                <span class="carga__titulo">Arrastre los archivos aquí o haga clic para elegirlos</span>
+                <span class="carga__ayuda">CSV de nivel y de lluvia de datos.gov.co, o un archivo combinado con <code>estacion</code>, <code>fecha_hora</code>, <code>nivel_m</code> y <code>lluvia_mm</code></span>
               </label>
-              <div class="carga__elegido" id="adm-archivo-elegido" hidden>
-                <svg aria-hidden="true"><use href="img/iconos.svg#archivo"></use></svg>
-                <span><b id="adm-archivo-nombre"></b><small id="adm-archivo-detalle"></small></span>
-                <button class="boton-texto" id="adm-quitar" type="button">Quitar</button>
-              </div>
-              <p class="carga__ejemplos">Archivos de prueba:
-                <a href="ejemplos/ejemplo_compatible.csv" download>correcto</a> · <a href="ejemplos/ejemplo_incompatible.csv" download>con errores</a></p>
             </div>
-            <div class="acciones" role="group" aria-label="Qué hacer con el archivo">
-              <button class="boton boton--contorno-oscuro" id="adm-revisar" type="button" disabled><svg aria-hidden="true"><use href="img/iconos.svg#escudo"></use></svg>Revisar archivo</button>
-              <button class="boton boton--contorno-oscuro" id="adm-analizar" type="button" disabled><svg aria-hidden="true"><use href="img/iconos.svg#grafica"></use></svg>Analizar datos</button>
-              <button class="boton boton--primario" id="adm-publicar" type="button" disabled><svg aria-hidden="true"><use href="img/iconos.svg#semaforo"></use></svg>Publicar datos</button>
+            <ul class="archivos" id="adm-archivos" hidden></ul>
+            <p class="carga__ejemplos">Archivos de prueba (ya combinados):
+              <a href="ejemplos/ejemplo_compatible.csv" download>correcto</a> · <a href="ejemplos/ejemplo_incompatible.csv" download>con errores</a></p>
+            <div class="acciones" role="group" aria-label="Qué hacer con los archivos">
+              <button class="boton boton--contorno-oscuro" id="adm-revisar" type="button" disabled><svg aria-hidden="true"><use href="img/iconos.svg#escudo"></use></svg>Revisar archivos</button>
+              <button class="boton boton--contorno-oscuro" id="adm-analizar" type="button" disabled><svg aria-hidden="true"><use href="img/iconos.svg#grafica"></use></svg>Analizar un archivo</button>
+              <button class="boton boton--primario" id="adm-crear" type="button" disabled><svg aria-hidden="true"><use href="img/iconos.svg#semaforo"></use></svg>Crear lote</button>
             </div>
             <div class="aviso" id="adm-aviso" role="status" aria-live="polite" hidden></div>
           </article>
-
-          <article class="tarjeta">
-            <div class="pestanas" role="tablist" aria-label="Resultados">
-              <button class="pestana" role="tab" id="adm-pestana-revision" aria-controls="adm-panel-revision" aria-selected="true" type="button">Revisión</button>
-              <button class="pestana" role="tab" id="adm-pestana-analisis" aria-controls="adm-panel-analisis" aria-selected="false" type="button">Análisis</button>
-              <button class="pestana" role="tab" id="adm-pestana-publicacion" aria-controls="adm-panel-publicacion" aria-selected="false" type="button">Publicación</button>
-            </div>
-            <div class="panel" role="tabpanel" id="adm-panel-revision" aria-labelledby="adm-pestana-revision"><p class="vacio">Aquí verá si el archivo sirve para el modelo, qué advertencias tiene y qué debe corregir.</p></div>
-            <div class="panel" role="tabpanel" id="adm-panel-analisis" aria-labelledby="adm-pestana-analisis" hidden><p class="vacio">Aquí verá el análisis del archivo: calidad de los datos, estadísticas y gráficas.</p></div>
-            <div class="panel" role="tabpanel" id="adm-panel-publicacion" aria-labelledby="adm-pestana-publicacion" hidden><p class="vacio">Aquí verá el resultado de la publicación y los semáforos actualizados.</p></div>
-          </article>
+          <article class="tarjeta" id="adm-resultado" hidden></article>
+          <article class="tarjeta panel" id="adm-analisis" hidden></article>
         </section>
-        <!-- ---------------------------------------------------------- Descargas -->
+
+        <!-- Descargas -->
         <section id="vista-descargas" hidden>
           <article class="tarjeta">
             <h2>Datos publicados</h2>
@@ -156,7 +144,7 @@
           </article>
         </section>
 
-        <!-- ---------------------------------------------------------- Administradores -->
+        <!-- Administradores -->
         <section id="vista-equipo" hidden>
           <article class="tarjeta">
             <h2>Administradores</h2>
@@ -165,7 +153,7 @@
           </article>
         </section>
 
-        <!-- ---------------------------------------------------------- Actividad -->
+        <!-- Actividad -->
         <section id="vista-actividad" hidden>
           <article class="tarjeta">
             <h2>Quién hizo qué</h2>

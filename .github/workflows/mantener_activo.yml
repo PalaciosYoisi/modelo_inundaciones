@@ -1,0 +1,14 @@
+name: Mantener activa la API
+
+# Render duerme el servicio gratuito tras 15 minutos sin visitas. Este flujo lo visita cada 10 minutos.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  visitar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Visitar /salud
+        run: curl --silent --show-error --fail --retry 3 --retry-delay 20 --max-time 90 "${{ secrets.URL_API }}/salud"

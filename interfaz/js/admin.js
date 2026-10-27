@@ -1,17 +1,17 @@
 // Página del administrador: ingreso con clave, resumen de las estaciones y flujo de archivos (revisar, analizar y publicar).
 import * as api from "./api.js";
 import { fecha, guardarArchivo, h, hace, icono, numero, reemplazar } from "./dom.js";
+import { iniciarCarga } from "./cargar_archivos.js";
 import { iniciarConsulta } from "./consulta_diaria.js";
 import { iniciarDescargas } from "./descargas.js";
-import { vistaAnalisis, vistaPublicacion, vistaRevision } from "./vistas_admin.js";
 
 const $ = (id) => document.getElementById(id);
-const botones = { revisar: $("adm-revisar"), analizar: $("adm-analizar"), publicar: $("adm-publicar") };
-const paneles = { revision: $("adm-panel-revision"), analisis: $("adm-panel-analisis"), publicacion: $("adm-panel-publicacion") };
-const pestanas = { revision: $("adm-pestana-revision"), analisis: $("adm-pestana-analisis"), publicacion: $("adm-pestana-publicacion") };
-const iniciales = new Map(Object.values(paneles).map((p) => [p, [...p.childNodes].map((n) => n.cloneNode(true))]));
-let archivo = null;
 let yo = null;
+const carga = iniciarCarga({
+  alVencer: () => { api.sesion.cerrar(); mostrarPanel(false); },
+  alLoteCreado: () => consulta.actualizarAviso(),
+  alRevisar: (id) => { irAVista("consulta"); consulta.abrir(id); },
+});
 const descargas = iniciarDescargas({ alVencer: () => { api.sesion.cerrar(); mostrarPanel(false); } });
 const consulta = iniciarConsulta({
   alVencer: () => { api.sesion.cerrar(); mostrarPanel(false); },
@@ -80,7 +80,7 @@ function cerrarSesion() {
   api.salir().catch(() => {});                    // si no se puede avisar al servidor, igual se cierra aquí
   api.sesion.cerrar();
   yo = null;
-  elegir(null);
+  carga.reiniciar();
   mostrarPanel(false);
 }
 $("cerrar-sesion").addEventListener("click", cerrarSesion);
@@ -90,7 +90,7 @@ if (api.sesion.token()) {                         // si la pestaña ya tenía un
 }
 
 // ------------------------------------------------------------------ Menú lateral
-const TITULOS = { resumen: "Resumen", consulta: "Consulta diaria", datos: "Cargar archivo", descargas: "Descargas", actividad: "Actividad", equipo: "Administradores" };
+const TITULOS = { resumen: "Resumen", consulta: "Consulta diaria", datos: "Cargar archivos", descargas: "Descargas", actividad: "Actividad", equipo: "Administradores" };
 
 function irAVista(vista) {
   for (const enlace of document.querySelectorAll("[data-vista]")) {
@@ -145,115 +145,18 @@ function tablaEstaciones(lista) {
     h("tbody", {}, lista.map(fila))));
 }
 
-// ------------------------------------------------------------------ Avisos y pestañas
-function aviso(tipo, mensaje) {
-  const caja = $("adm-aviso");
-  caja.className = `aviso aviso--${tipo}`;
-  reemplazar(caja, tipo === "error" ? icono("aviso") : null, h("p", { style: "margin:0" }, mensaje));
-  caja.hidden = false;
-}
-const ocultarAviso = () => { $("adm-aviso").hidden = true; };
-
-function irA(clave) {
-  for (const [k, pestana] of Object.entries(pestanas)) {
-    pestana.setAttribute("aria-selected", String(k === clave));
-    paneles[k].hidden = k !== clave;
-  }
-}
-const claves = Object.keys(pestanas);
-for (const [clave, pestana] of Object.entries(pestanas)) {
-  pestana.addEventListener("click", () => irA(clave));
-  pestana.addEventListener("keydown", (e) => {
-    const paso = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
-    if (!paso) return;
-    const siguiente = claves[(claves.indexOf(clave) + paso + claves.length) % claves.length];
-    irA(siguiente);
-    pestanas[siguiente].focus();
-  });
-}
-
-// ------------------------------------------------------------------ Archivo elegido
-const tamano = (bytes) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`);
-
-function elegir(nuevo) {
-  archivo = nuevo;
-  $("adm-zona-carga").dataset.conArchivo = String(Boolean(nuevo));
-  $("adm-archivo-elegido").hidden = !nuevo;
-  if (nuevo) {
-    $("adm-archivo-nombre").textContent = nuevo.name;
-    $("adm-archivo-detalle").textContent = tamano(nuevo.size);
-  } else {
-    $("adm-archivo").value = "";
-  }
-  Object.values(botones).forEach((b) => { b.disabled = !nuevo; });
-  for (const [panel, nodos] of iniciales) reemplazar(panel, nodos.map((n) => n.cloneNode(true)));
-  ocultarAviso();
-  irA("revision");
-}
-
-$("adm-archivo").addEventListener("change", (e) => elegir(e.target.files[0] ?? null));
-$("adm-quitar").addEventListener("click", () => elegir(null));
-const area = $("adm-area-carga");
-["dragenter", "dragover"].forEach((n) => area.addEventListener(n, (e) => { e.preventDefault(); area.classList.add("arrastrando"); }));
-["dragleave", "drop"].forEach((n) => area.addEventListener(n, () => area.classList.remove("arrastrando")));
-area.addEventListener("drop", (e) => { e.preventDefault(); if (e.dataTransfer.files[0]) elegir(e.dataTransfer.files[0]); });
-
-// ------------------------------------------------------------------ Acciones
-async function ejecutar(textoCarga, tarea) {
-  Object.values(botones).forEach((b) => { b.disabled = true; });
-  aviso("cargando", textoCarga);
-  try {
-    await tarea();
-    ocultarAviso();
-  } catch (error) {
-    if (error.estado === 401) {                   // la sesión venció: se vuelve a pedir el ingreso
-      api.sesion.cerrar();
-      mostrarPanel(false);
-    }
-    if (error.detalle?.diagnostico) {             // el archivo no sirve: se muestra el diagnóstico completo
-      reemplazar(paneles.revision, vistaRevision(error.detalle.diagnostico));
-      irA("revision");
-    }
-    aviso("error", error.message ?? "Ocurrió un error inesperado.");
-  } finally {
-    Object.values(botones).forEach((b) => { b.disabled = !archivo; });
-  }
-}
-
-botones.revisar.addEventListener("click", () => ejecutar("Revisando el archivo…", async () => {
-  reemplazar(paneles.revision, vistaRevision((await api.validar(archivo)).validacion));
-  irA("revision");
-}));
-
-botones.analizar.addEventListener("click", () => ejecutar("Analizando los datos…", async () => {
-  reemplazar(paneles.analisis, vistaAnalisis(await api.analizar(archivo)));
-  irA("analisis");
-}));
-
-botones.publicar.addEventListener("click", () => ejecutar("Revisando y publicando…", async () => {
-  const respuesta = await api.publicar(archivo);
-  reemplazar(paneles.revision, vistaRevision(respuesta.validacion));
-  reemplazar(paneles.publicacion, vistaPublicacion(respuesta, { alDescargar: descargar }));
-  irA("publicacion");
-}));
-
-async function descargar() {
-  await ejecutar("Preparando el archivo…", async () => {
-    guardarArchivo(await api.descargarPredicciones(archivo), `predicciones_${archivo.name.replace(/\.[^.]+$/, "")}.csv`);
-  });
-}
-
 // ------------------------------------------------------------------ Actividad (auditoría)
 const ACCIONES = {
   ingreso: "Ingresó", ingreso_fallido: "Intento de ingreso fallido", salida: "Cerró sesión", cambio_de_clave: "Cambió su clave",
   validar: "Revisó un archivo", analizar: "Analizó un archivo", predecir: "Hizo predicciones con un archivo",
   descargar_predicciones: "Descargó predicciones", publicar: "Publicó datos", publicar_rechazado: "Intentó publicar un archivo con errores",
+  revisar_archivos: "Revisó archivos de datos", subir_archivos: "Subió archivos para crear un lote", subir_archivos_resultado: "Unificó los archivos en un lote",
   desbloquear: "Desbloqueó a un administrador", descargar_datos: "Descargó los datos publicados", consulta_manual: "Consultó datos.gov.co", consulta_diaria: "Consulta diaria automática",
   descargar_lote: "Descargó un lote", confirmar_lote: "Confirmó un lote", confirmar_lote_fallido: "Confirmó un lote, pero falló la publicación", rechazar_lote: "Rechazó un lote",
 };
 const cuentaDe = (r) => {
   const d = r.detalle ?? {};
-  return [d.archivo && `Archivo: ${d.archivo}`, d.filas !== undefined && `${numero(d.filas)} filas`, d.errores && `${d.errores} errores`, d.motivo && `Motivo: ${d.motivo}`, d.usuario && `Persona: ${d.usuario}`, d.lote && `Lote ${d.lote}`, d.estacion && `Estación: ${d.estacion}`, d.dias && `Periodo: ${d.dias === "todos" ? "todo" : `${d.dias} días`}`, d.resultado && `Resultado: ${d.resultado}`].filter(Boolean).join(" · ");
+  return [d.archivo && `Archivo: ${d.archivo}`, d.archivos && `Archivos: ${d.archivos.join(", ")}`, d.filas !== undefined && `${numero(d.filas)} filas`, d.errores && `${d.errores} errores`, d.motivo && `Motivo: ${d.motivo}`, d.usuario && `Persona: ${d.usuario}`, d.lote && `Lote ${d.lote}`, d.estacion && `Estación: ${d.estacion}`, d.dias && `Periodo: ${d.dias === "todos" ? "todo" : `${d.dias} días`}`, d.resultado && `Resultado: ${d.resultado}`].filter(Boolean).join(" · ");
 };
 
 async function cargarActividad() {

@@ -28,21 +28,22 @@ from starlette.exceptions import HTTPException as ErrorHTTP
 
 import auditoria
 import consultar_diario
+import entrada
+import ingesta
 import lotes
 import recomendacion
 import reportes
 import usuarios
 from base_datos import ErrorBaseDatos
+from ingesta import CARPETA_MODELOS, CARPETA_PUBLICADO, DATOS_INICIALES
 from eda import analizar
 from pipeline import PipelineSemaforo, normalizar_tabla, version_activa
 from publicacion import Publicacion
 from validacion import validar
 
-RAIZ = Path(__file__).resolve().parents[1]
-CARPETA_MODELOS = Path(os.environ.get("SEMAFORO_MODELOS", RAIZ / "modelos"))
-CARPETA_PUBLICADO = Path(os.environ.get("SEMAFORO_PUBLICADO", RAIZ / "datos" / "publicado"))
-DATOS_INICIALES = RAIZ / "datos" / "datos_horarios.csv"
 TAM_MAX_MB = int(os.environ.get("SEMAFORO_TAM_MAX_MB", "60"))
+TAM_MAX_CRUDO_MB = int(os.environ.get("SEMAFORO_TAM_MAX_CRUDO_MB", "400"))     # los archivos de datos.gov.co pueden ser muy grandes
+MAX_ARCHIVOS = 12
 EXTENSIONES = (".csv", ".xlsx")
 
 
@@ -336,21 +337,40 @@ def predecir(request: Request, archivo: UploadFile = File(..., description="CSV 
                           "total_predicciones": len(salida), "predicciones": salida.head(limite)})
 
 
-@admin.post("/publicar", summary="Agregar las lecturas del archivo y actualizar los semáforos que ve el público",
-            responses={422: {"description": "El archivo no es compatible con el modelo; no se publicó nada."}})
-def publicar(request: Request, archivo: UploadFile = File(..., description="CSV o Excel con lecturas nuevas (pueden ser pocas horas)."),
-             sesion: dict = Depends(exigir_administrador)):
-    tabla, nombre = leer_archivo(archivo)
+@admin.post("/archivos", summary="Subir uno o varios archivos de datos: se reconoce y revisa cada uno y se unifican en un lote pendiente",
+            responses={200: {"description": "Los informes por archivo y, si todo sirve y se pidió, el lote creado."}})
+def subir_archivos(request: Request, archivos: list[UploadFile] = File(..., description="CSV de nivel y de lluvia de datos.gov.co, o un archivo ya combinado."),
+                   crear: bool = Query(True, description="False: solo revisar los archivos, sin crear el lote."),
+                   sesion: dict = Depends(exigir_administrador)):
+    if not archivos or len(archivos) > MAX_ARCHIVOS:
+        raise ErrorDeUsuario(f"Suba entre 1 y {MAX_ARCHIVOS} archivos a la vez.", 400, "CANTIDAD_DE_ARCHIVOS")
     pipeline = pipeline_activo()
-    diagnostico = validar(tabla, pipeline.metadatos, exigir_historia=False)     # las lecturas nuevas se suman a las ya publicadas
-    if diagnostico["resumen"]["errores"]:
-        auditar(request, sesion["usuario"], "publicar_rechazado", {"archivo": nombre, "errores": diagnostico["resumen"]["errores"]})
-        raise ErrorDeUsuario("El archivo tiene errores, por eso no se publicó nada. Revise el diagnóstico, corríjalo y cárguelo de nuevo.",
-                             422, "ARCHIVO_INCOMPATIBLE", {"diagnostico": diagnostico})
-    auditar(request, sesion["usuario"], "publicar", {"archivo": nombre, "filas": len(tabla)}, estricto=True)
-    cambios = publicacion().integrar(normalizar_tabla(tabla), pipeline.codigos)
-    return a_json_seguro({"archivo": nombre, "validacion": diagnostico, "cambios": cambios, **publicacion().estaciones(pipeline)})
-
+    try:
+        ctx = ingesta.contexto(pipeline, publicacion())
+    except ingesta.ErrorDeIngesta as error:
+        raise ErrorDeUsuario(str(error), 503, "SIN_MAPA_DE_PLUVIOMETROS")
+    informes, partes = [], {"nivel": [], "lluvia": [], "combinado": []}
+    for archivo in archivos:
+        informe, datos = entrada.leer(archivo.filename or "archivo", archivo.file, set(ctx.codigos), set(ctx.pluviometros), pipeline.metadatos, TAM_MAX_CRUDO_MB)
+        informes.append(informe)
+        if datos is not None:
+            partes[informe["tipo"]].append(datos)
+    nombres = [i["archivo"] for i in informes]
+    con_errores = [i for i in informes if i["estado"] == "error"]
+    if con_errores or not crear:
+        auditar(request, sesion["usuario"], "revisar_archivos", {"archivos": nombres, "con_errores": len(con_errores)})
+        mensaje = ("No se creó el lote: quite o corrija los archivos con errores." if con_errores else
+                   "Los archivos sirven. Pulse «Crear lote» para unificarlos y dejarlos en revisión.")
+        return a_json_seguro({"informes": informes, "lote": None, "mensaje": mensaje})
+    auditar(request, sesion["usuario"], "subir_archivos", {"archivos": nombres}, estricto=True)
+    unir = lambda lista, columnas, llaves: (pd.concat(lista, ignore_index=True).drop_duplicates(llaves, keep="last") if lista
+                                            else pd.DataFrame(columns=columnas))
+    combinado = unir(partes["combinado"], ["estacion", "fecha_hora", "nivel_m", "lluvia_mm"], ["estacion", "fecha_hora"])
+    lote = ingesta.crear_lote("archivo", unir(partes["nivel"], ingesta.COLUMNAS_CRUDAS, ingesta.COLUMNAS_CRUDAS[:3]),
+                              unir(partes["lluvia"], ingesta.COLUMNAS_CRUDAS, ingesta.COLUMNAS_CRUDAS[:3]), combinado if len(combinado) else None, ctx,
+                              extra={"archivos": [{k: i[k] for k in ("archivo", "tipo", "tipo_texto", "estado", "filas", "filas_utiles", "desde", "hasta")} for i in informes]})
+    auditar(request, sesion["usuario"], "subir_archivos_resultado", {"resultado": lote["estado"], "lote": lote.get("lote")})
+    return a_json_seguro({"informes": informes, "lote": lote, "mensaje": lote["mensaje"]})
 
 @admin.get("/administradores", summary="Administradores y su estado (para desbloquear a quien se haya bloqueado)")
 def administradores():

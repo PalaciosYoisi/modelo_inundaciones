@@ -53,13 +53,13 @@ export function iniciarConsulta({ alVencer, alCambiar, alRevisar }) {
   function tablaLotes(lista) {
     if (!lista.length) return h("p", { clase: "vacio" }, "Todavía no hay consultas. Use «Consultar ahora» o programe la consulta diaria.");
     const fila = (l) => h("tr", {},
-      h("td", {}, h("b", {}, `Lote ${l.id}`)), h("td", {}, fecha(l.creado)),
+      h("td", {}, h("b", {}, `Lote ${l.id}`)), h("td", {}, fecha(l.creado)), h("td", {}, l.origen === "archivo" ? "Archivos subidos" : "datos.gov.co"),
       h("td", {}, h("span", { clase: `etiqueta etiqueta--${ESTADOS[l.estado]?.clase ?? "gris"}` }, ESTADOS[l.estado]?.texto ?? l.estado)),
       h("td", { clase: "num" }, numero(l.filas)), h("td", {}, `${fecha(l.desde, false)} a ${fecha(l.hasta, false)}`),
       h("td", {}, l.decidido_por ?? "—"),
       h("td", {}, h("button", { clase: "boton boton--contorno-oscuro boton--pequeno", type: "button", onclick: () => abrir(l.id) }, "Ver")));
     return h("div", { clase: "tabla" }, h("table", {},
-      h("thead", {}, h("tr", {}, ["Lote", "Consultado", "Estado", "Horas", "Periodo", "Decidió", ""].map((t, i) => h("th", { clase: i === 3 ? "num" : null }, t)))),
+      h("thead", {}, h("tr", {}, ["Lote", "Creado", "Origen", "Estado", "Horas", "Periodo", "Decidió", ""].map((t, i) => h("th", { clase: i === 4 ? "num" : null }, t)))),
       h("tbody", {}, lista.map(fila))));
   }
 
@@ -100,6 +100,15 @@ export function iniciarConsulta({ alVencer, alCambiar, alRevisar }) {
       h("p", {}, x.mensaje))));
   }
 
+  // Qué aconseja el sistema y por qué (solo aconseja: decide el administrador)
+  const ETIQUETAS_RAZON = { contra: "En contra", cuidado: "Con cuidado", favor: "A favor", nota: "Para tener en cuenta" };
+  function recomendacion(r) {
+    if (!r) return null;
+    return h("div", { clase: `recomendacion recomendacion--${r.accion}` },
+      h("h3", {}, r.titulo), h("p", {}, r.texto),
+      h("ul", { clase: "razones" }, r.razones.map((x) => h("li", {}, h("span", { clase: `razon razon--${x.tipo}` }, ETIQUETAS_RAZON[x.tipo]), h("span", {}, x.texto)))));
+  }
+
   // Cuando una consulta nueva llega con un lote ya pendiente, se combinan; aquí se deja claro qué se combinó y en qué se parecen
   function combinado(comparacion) {
     if (!comparacion?.length) return null;
@@ -111,6 +120,10 @@ export function iniciarConsulta({ alVencer, alCambiar, alRevisar }) {
         h("thead", {}, h("tr", {}, ["Lote anterior", "Horas que tenía", "Iguales en ambas", "Con valor distinto", "Solo en el anterior", "Solo en la consulta nueva"].map((t, i) => h("th", { clase: i ? "num" : null }, t)))),
         h("tbody", {}, comparacion.map((c) => h("tr", {}, h("td", {}, h("b", {}, `Lote ${c.lote}`)), [c.horas, c.iguales, c.distintas, c.solo_en_anterior, c.solo_en_nueva].map((n) => h("td", { clase: "num" }, numero(n)))))))));
   }
+
+  const origenDe = (l) => (l.origen === "archivo"
+    ? `Origen: archivos subidos (${(l.resumen.archivos ?? []).map((a) => `${a.archivo}, ${a.tipo_texto.toLowerCase()}`).join("; ")}).`
+    : `Origen: consulta a datos.gov.co, nivel y lluvia desde ${fecha(l.resumen.consulta?.nivel_desde, false)}.`);
 
   function descartes(d) {
     const partes = Object.entries(d ?? {}).filter(([, n]) => n > 0).map(([k, n]) => `${numero(n)} ${DESCARTES[k] ?? k}`);
@@ -135,10 +148,14 @@ export function iniciarConsulta({ alVencer, alCambiar, alRevisar }) {
 
   function acciones(l, nuevas, actualizadas) {
     if (pregunta) {
+      const aconsejo = l.recomendacion?.accion;
+      const contra = pregunta === "confirmar" && aconsejo === "rechazar" ? " El sistema recomendaba rechazarlo." : pregunta === "rechazar" && aconsejo === "confirmar" ? " El sistema recomendaba agregarlo." : "";
+      const motivoInicial = aconsejo === "rechazar" ? `Información débil. ${l.recomendacion.razones.filter((x) => x.tipo === "contra").map((x) => x.texto).join(" ")}` : "";
       const texto = pregunta === "confirmar"
         ? `Se agregarán ${numero(nuevas)} horas nuevas, se completarán ${numero(actualizadas)} y los semáforos que ve el público se actualizarán. ¿Confirma?`
-        : "El lote se descartará y no llegará al modelo. ¿Lo rechaza?";
-      return h("div", { clase: "confirmar", role: "alert" }, h("p", {}, texto + (l.resumen.combina?.length ? " Recuerde que este lote combina varias consultas." : "")),
+        : "El lote se descartará y no llegará al modelo. Cuente por qué, para que quede en el registro. ¿Lo rechaza?";
+      return h("div", { clase: "confirmar", role: "alert" }, h("p", {}, texto + contra + (l.resumen.combina?.length ? " Recuerde que este lote combina varias consultas." : "")),
+        pregunta === "rechazar" ? h("textarea", { id: "cons-motivo", clase: "motivo", rows: 3, maxlength: 300, "aria-label": "Motivo del rechazo", placeholder: "Motivo del rechazo (opcional)" }, motivoInicial) : null,
         h("button", { clase: "boton boton--contorno-oscuro boton--pequeno", type: "button", onclick: () => { pregunta = null; pintar(); } }, "Cancelar"),
         h("button", { clase: "boton boton--primario boton--pequeno", type: "button", onclick: () => decidir(pregunta) }, pregunta === "confirmar" ? "Sí, confirmar" : "Sí, rechazar"));
     }
@@ -176,8 +193,9 @@ export function iniciarConsulta({ alVencer, alCambiar, alRevisar }) {
         dato(numero(nuevas), "horas nuevas"), dato(numero(actualizadas), "horas que se completan")),
       l.estado === "unificado" && r.unificado_en
         ? h("p", {}, h("button", { clase: "boton boton--contorno-oscuro boton--pequeno", type: "button", onclick: () => abrir(r.unificado_en) }, `Ver el lote ${r.unificado_en}, que lo reemplaza`)) : null,
+      recomendacion(l.recomendacion),
       combinado(r.combina),
-      h("p", {}, `Periodo: ${fecha(l.desde, false)} a ${fecha(l.hasta, false)}. Se consultó nivel y lluvia desde ${fecha(r.consulta?.nivel_desde, false)}.`),
+      h("p", {}, `Periodo: ${fecha(l.desde, false)} a ${fecha(l.hasta, false)}. ${origenDe(l)}`),
       h("h3", {}, "Revisión automática"), hallazgos(r.validacion?.hallazgos), descartes(r.descartes),
       r.estaciones_sin_datos?.length ? h("p", { clase: "nota-suave" }, `Sin datos nuevos en: ${r.estaciones_sin_datos.map(nombreDe).join(", ")}.`) : null,
       h("h3", {}, "Datos por estación"),
@@ -189,11 +207,12 @@ export function iniciarConsulta({ alVencer, alCambiar, alRevisar }) {
   // ---------------------------------------------------------------- Decidir y descargar
   async function decidir(que) {
     const id = abierto.id;
+    const motivo = $("cons-motivo")?.value ?? "";
     pregunta = null;
     aviso("cargando", que === "confirmar" ? "Enviando los datos al modelo…" : "Rechazando el lote…");
     try {
       if (que === "confirmar") { await api.confirmarLote(id); aviso("info", "Lote confirmado. Los semáforos que ve el público ya se actualizaron."); alCambiar(); }
-      else { await api.rechazarLote(id); aviso("info", "Lote rechazado. No llegó al modelo."); }
+      else { await api.rechazarLote(id, motivo); aviso("info", "Lote rechazado. No llegó al modelo."); }
     } catch (error) {
       aviso("error", falla(error));
     }
@@ -227,5 +246,5 @@ export function iniciarConsulta({ alVencer, alCambiar, alRevisar }) {
   });
   $("ir-a-consulta").addEventListener("click", alRevisar);
 
-  return { cargar, actualizarAviso };
+  return { cargar, actualizarAviso, abrir };
 }

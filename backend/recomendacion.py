@@ -7,10 +7,10 @@ from datetime import datetime
 
 import pandas as pd
 
-MAX_DESCARTE_ACEPTABLE = 0.02        # más de esto: con cuidado
-MAX_DESCARTE_GRAVE = 0.10            # más de esto: rechazar
-MIN_COBERTURA_NIVEL = 0.80           # menos de esto: con cuidado
-MIN_COBERTURA_GRAVE = 0.50           # menos de esto: rechazar
+MAX_DESCARTE_ACEPTABLE = 0.02        
+MAX_DESCARTE_GRAVE = 0.10            
+MIN_COBERTURA_NIVEL = 0.80           
+MIN_COBERTURA_GRAVE = 0.50          
 POCAS_HORAS = 24
 HORAS_RECIENTES = 24
 DIAS_VIEJOS = 7

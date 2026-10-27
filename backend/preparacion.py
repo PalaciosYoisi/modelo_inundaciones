@@ -25,9 +25,19 @@ def referencias_de(metadatos: dict) -> dict:
     return salida
 
 
+def leer_fechas(serie: pd.Series) -> pd.Series:
+    """Fechas de la API (2026-10-25T23:59:00.000) o de los CSV descargados (10/25/2026 11:59:00 PM). Lo que no se entiende queda vacío."""
+    fechas = pd.to_datetime(serie, format="ISO8601", errors="coerce")
+    for formato in ("%m/%d/%Y %I:%M:%S %p", "%Y %b %d %I:%M:%S %p"):
+        faltan = fechas.isna() & serie.notna()
+        if faltan.any():
+            fechas[faltan] = pd.to_datetime(serie[faltan], format=formato, errors="coerce")
+    return fechas
+
+
 def _leer(crudo: pd.DataFrame) -> pd.DataFrame:
     d = crudo.copy()
-    d["fecha"] = pd.to_datetime(d["fechaobservacion"], errors="coerce")
+    d["fecha"] = d["fechaobservacion"] if pd.api.types.is_datetime64_any_dtype(d["fechaobservacion"]) else leer_fechas(d["fechaobservacion"])
     d["valor"] = pd.to_numeric(d["valorobservado"].astype(str).str.replace(",", ".", regex=False), errors="coerce")
     return d.dropna(subset=["fecha", "valor"])
 
@@ -84,7 +94,7 @@ def _lluvia_por_hora(crudo: pd.DataFrame, acumulados: set, descartes: dict) -> p
     return l.groupby(["codigoestacion", "hora"])["valor"].sum().unstack(0)
 
 
-def _solo_cambios(tabla: pd.DataFrame, publicado: pd.DataFrame):
+def solo_cambios(tabla: pd.DataFrame, publicado: pd.DataFrame):
     """Deja solo las horas que traen algo distinto de lo ya publicado: horas nuevas, o horas ya publicadas a las que llega un valor nuevo o distinto."""
     llaves = ["estacion", "fecha_hora"]
     previo = publicado.drop_duplicates(llaves).set_index(llaves)[["nivel_m", "lluvia_mm"]]
@@ -101,12 +111,11 @@ def _solo_cambios(tabla: pd.DataFrame, publicado: pd.DataFrame):
     return tabla[hay].reset_index(drop=True), existia[hay]
 
 
-def preparar(nivel: pd.DataFrame, lluvia: pd.DataFrame, pluviometros: dict, publicado: pd.DataFrame, referencias: dict, estaciones: list[str]):
-    """Devuelve (tabla horaria con estacion, fecha_hora, nivel_m y lluvia_mm; resumen de lo que se hizo).
+def por_hora(nivel: pd.DataFrame, lluvia: pd.DataFrame, pluviometros: dict, publicado: pd.DataFrame, referencias: dict, estaciones: list[str]):
+    """Devuelve (tabla horaria con estacion, fecha_hora, nivel_m y lluvia_mm; lo que se descartó; estaciones sin datos).
 
-    nivel y lluvia: lo consultado, tal cual llegó. pluviometros: contenido de datos/pluviometros.json.
-    publicado: lecturas ya publicadas (estacion, fecha_hora, nivel_m, lluvia_mm). Sirven de contexto para los picos
-    y para dejar en la tabla solo lo que es nuevo o cambia.
+    nivel y lluvia: lo consultado o subido, tal cual llegó. pluviometros: contenido de datos/pluviometros.json.
+    publicado: lecturas ya publicadas (estacion, fecha_hora, nivel_m), solo para dar contexto a los picos.
     """
     descartes = {}
     nivel_h = _nivel_por_hora(nivel, referencias, descartes)
@@ -132,10 +141,7 @@ def preparar(nivel: pd.DataFrame, lluvia: pd.DataFrame, pluviometros: dict, publ
                                     "lluvia_mm": lluv.reindex(horas).round(2).values}).dropna(subset=["nivel_m", "lluvia_mm"], how="all"))
     descartes["picos_de_una_hora"] = picos_total
     tabla = pd.concat(partes, ignore_index=True) if partes else pd.DataFrame(columns=["estacion", "fecha_hora", "nivel_m", "lluvia_mm"])
-    tabla, _ = _solo_cambios(tabla, publicado)
-    resumen = {**resumir(tabla, publicado), "estaciones_sin_datos": sin_datos, "descartes": descartes}
-    return tabla, resumen
-
+    return tabla, descartes, sin_datos
 
 def resumir(tabla: pd.DataFrame, publicado: pd.DataFrame) -> dict:
     """Cuántas horas trae la tabla, por estación: nuevas (no estaban publicadas) y actualizadas (ya estaban y reciben un valor)."""

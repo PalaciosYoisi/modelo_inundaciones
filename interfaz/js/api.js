@@ -60,7 +60,7 @@ export const lotes = async () => (await pedir("/admin/lotes", { conSesion: true 
 export const lote = async (id) => (await pedir(`/admin/lotes/${id}`, { conSesion: true })).json();
 export const descargarLote = async (id) => (await pedir(`/admin/lotes/${id}/descargar`, { conSesion: true })).blob();
 export const confirmarLote = async (id) => (await pedir(`/admin/lotes/${id}/confirmar`, { method: "POST", conSesion: true })).json();
-export const rechazarLote = async (id) => (await pedir(`/admin/lotes/${id}/rechazar`, { method: "POST", conSesion: true })).json();
+export const rechazarLote = async (id, motivo) => (await pedir(`/admin/lotes/${id}/rechazar`, { ...json({ motivo }), conSesion: true })).json();
 export const consultarAhora = async () => (await pedir("/admin/consulta/ejecutar", { method: "POST", conSesion: true })).json();
 export const administradores = async () => (await pedir("/admin/administradores", { conSesion: true })).json();
 export const desbloquear = async (usuario) => (await pedir(`/admin/administradores/${encodeURIComponent(usuario)}/desbloquear`, { method: "POST", conSesion: true })).json();
@@ -68,7 +68,9 @@ export const actividad = async (usuario, accion) => {
   const filtros = new URLSearchParams({ ...(usuario && { usuario }), ...(accion && { accion }) });
   return (await pedir(`/admin/actividad?${filtros}`, { conSesion: true })).json();
 };
-export const validar = async (archivo) => (await pedir("/admin/validar", conArchivo(archivo))).json();
+export const subirArchivos = async (archivos, crear) => {
+  const formulario = new FormData();
+  archivos.forEach((a) => formulario.append("archivos", a, a.name));
+  return (await pedir(`/admin/archivos?crear=${crear}`, { method: "POST", body: formulario, conSesion: true })).json();
+};
 export const analizar = async (archivo) => (await pedir("/admin/analizar?incluir_figuras=true", conArchivo(archivo))).json();
-export const publicar = async (archivo) => (await pedir("/admin/publicar", conArchivo(archivo))).json();
-export const descargarPredicciones = async (archivo) => (await pedir("/admin/predecir?formato=csv", conArchivo(archivo))).blob();
