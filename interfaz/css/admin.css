@@ -163,3 +163,7 @@ body.adm { background: #eaf0f5; }
 .tabla--alta th { position: sticky; top: 0; }
 .acciones-lote { display: flex; flex-wrap: wrap; gap: .8rem; margin-top: 1.4rem; }
 @media (max-width: 680px) { .acciones-lote .boton { width: 100%; } .lote-estacion .conmutador { margin-left: 0; } }
+
+.combinado { margin: 1.4rem 0; padding: 1.2rem 1.4rem; border: 2px solid var(--agua); border-radius: var(--radio-grande); background: var(--agua-suave); }
+.combinado h3 { margin: 0 0 .4rem; font-size: 1.15rem; }
+.combinado .tabla { background: var(--blanco); }

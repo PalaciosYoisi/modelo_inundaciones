@@ -60,3 +60,12 @@ export function tabla(columnas, filas) {
       h("thead", {}, h("tr", {}, columnas.map((c) => h("th", { clase: c.numerica ? "num" : null }, c.titulo)))),
       h("tbody", {}, filas.map((fila) => h("tr", {}, columnas.map((c) => h("td", { clase: c.numerica ? "num" : null }, c.valor(fila))))))));
 }
+
+/** Entrega al navegador un archivo ya descargado (un Blob) para que la persona lo guarde. */
+export function guardarArchivo(blob, nombre) {
+  const enlace = h("a", { href: URL.createObjectURL(blob), download: nombre });
+  document.body.append(enlace);
+  enlace.click();
+  enlace.remove();
+  URL.revokeObjectURL(enlace.href);
+}

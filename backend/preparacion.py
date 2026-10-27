@@ -132,11 +132,18 @@ def preparar(nivel: pd.DataFrame, lluvia: pd.DataFrame, pluviometros: dict, publ
                                     "lluvia_mm": lluv.reindex(horas).round(2).values}).dropna(subset=["nivel_m", "lluvia_mm"], how="all"))
     descartes["picos_de_una_hora"] = picos_total
     tabla = pd.concat(partes, ignore_index=True) if partes else pd.DataFrame(columns=["estacion", "fecha_hora", "nivel_m", "lluvia_mm"])
-    tabla, existia = _solo_cambios(tabla, publicado)
+    tabla, _ = _solo_cambios(tabla, publicado)
+    resumen = {**resumir(tabla, publicado), "estaciones_sin_datos": sin_datos, "descartes": descartes}
+    return tabla, resumen
+
+
+def resumir(tabla: pd.DataFrame, publicado: pd.DataFrame) -> dict:
+    """Cuántas horas trae la tabla, por estación: nuevas (no estaban publicadas) y actualizadas (ya estaban y reciben un valor)."""
+    llaves = ["estacion", "fecha_hora"]
+    existia = pd.Series(tabla.set_index(llaves).index.isin(publicado.set_index(llaves).index), index=tabla.index)
     por_estacion = [{"estacion": c, "horas": len(g), "horas_nuevas": int((~existia[g.index]).sum()), "horas_actualizadas": int(existia[g.index].sum()),
                      "desde": g["fecha_hora"].min(), "hasta": g["fecha_hora"].max(),
                      "horas_con_nivel": int(g["nivel_m"].notna().sum()), "horas_con_lluvia": int(g["lluvia_mm"].notna().sum())}
                     for c, g in tabla.groupby("estacion")]
-    resumen = {"filas": len(tabla), "desde": tabla["fecha_hora"].min() if len(tabla) else None, "hasta": tabla["fecha_hora"].max() if len(tabla) else None,
-               "por_estacion": por_estacion, "estaciones_sin_datos": sin_datos, "descartes": descartes}
-    return tabla, resumen
+    return {"filas": len(tabla), "desde": tabla["fecha_hora"].min() if len(tabla) else None, "hasta": tabla["fecha_hora"].max() if len(tabla) else None,
+            "por_estacion": por_estacion}

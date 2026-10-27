@@ -1,6 +1,6 @@
 // Consulta diaria: los lotes de datos nuevos de datos.gov.co que el administrador revisa antes de enviarlos al modelo.
 import * as api from "./api.js";
-import { fecha, h, icono, numero, reemplazar } from "./dom.js";
+import { fecha, guardarArchivo, h, icono, numero, reemplazar } from "./dom.js";
 import { graficaLinea } from "./grafica.js";
 
 const $ = (id) => document.getElementById(id);
@@ -12,7 +12,7 @@ const ESTADOS = {
     detalle: "No se pueden confirmar. Espere la próxima consulta o revise el origen de los datos." },
   confirmado: { texto: "Confirmado", clase: "verde", banner: "publicado", titulo: "Lote confirmado", detalle: "Estos datos ya llegaron al modelo." },
   rechazado: { texto: "Rechazado", clase: "gris", banner: "gris", titulo: "Lote rechazado", detalle: "Estos datos no llegaron al modelo." },
-  reemplazado: { texto: "Reemplazado", clase: "gris", banner: "gris", titulo: "Lote reemplazado", detalle: "Llegó un lote más nuevo que incluye estos datos." },
+  unificado: { texto: "Unificado", clase: "gris", banner: "gris", titulo: "Lote unificado", detalle: "Sus datos se combinaron con los de una consulta más nueva." },
 };
 const DESCARTES = {
   nivel_cero_o_negativo: "niveles en cero o negativos", nivel_fuera_de_rango: "niveles fuera de lo posible para la estación",
@@ -100,6 +100,18 @@ export function iniciarConsulta({ alVencer, alCambiar, alRevisar }) {
       h("p", {}, x.mensaje))));
   }
 
+  // Cuando una consulta nueva llega con un lote ya pendiente, se combinan; aquí se deja claro qué se combinó y en qué se parecen
+  function combinado(comparacion) {
+    if (!comparacion?.length) return null;
+    const lista = comparacion.map((c) => `lote ${c.lote} (consultado el ${fecha(c.consultado)})`).join(" y ");
+    return h("div", { clase: "combinado" },
+      h("h3", {}, "Este lote combina varias consultas"),
+      h("p", {}, `Reúne los datos de la consulta más reciente con los del ${lista}, que estaban esperando revisión. Si una misma hora aparece en las dos, se usó el valor de la consulta más reciente.`),
+      h("div", { clase: "tabla" }, h("table", {},
+        h("thead", {}, h("tr", {}, ["Lote anterior", "Horas que tenía", "Iguales en ambas", "Con valor distinto", "Solo en el anterior", "Solo en la consulta nueva"].map((t, i) => h("th", { clase: i ? "num" : null }, t)))),
+        h("tbody", {}, comparacion.map((c) => h("tr", {}, h("td", {}, h("b", {}, `Lote ${c.lote}`)), [c.horas, c.iguales, c.distintas, c.solo_en_anterior, c.solo_en_nueva].map((n) => h("td", { clase: "num" }, numero(n)))))))));
+  }
+
   function descartes(d) {
     const partes = Object.entries(d ?? {}).filter(([, n]) => n > 0).map(([k, n]) => `${numero(n)} ${DESCARTES[k] ?? k}`);
     return h("p", { clase: "nota-suave" }, partes.length ? `El sistema descartó automáticamente: ${partes.join(", ")}.` : "El sistema no tuvo que descartar ninguna lectura.");
@@ -126,7 +138,7 @@ export function iniciarConsulta({ alVencer, alCambiar, alRevisar }) {
       const texto = pregunta === "confirmar"
         ? `Se agregarán ${numero(nuevas)} horas nuevas, se completarán ${numero(actualizadas)} y los semáforos que ve el público se actualizarán. ¿Confirma?`
         : "El lote se descartará y no llegará al modelo. ¿Lo rechaza?";
-      return h("div", { clase: "confirmar", role: "alert" }, h("p", {}, texto),
+      return h("div", { clase: "confirmar", role: "alert" }, h("p", {}, texto + (l.resumen.combina?.length ? " Recuerde que este lote combina varias consultas." : "")),
         h("button", { clase: "boton boton--contorno-oscuro boton--pequeno", type: "button", onclick: () => { pregunta = null; pintar(); } }, "Cancelar"),
         h("button", { clase: "boton boton--primario boton--pequeno", type: "button", onclick: () => decidir(pregunta) }, pregunta === "confirmar" ? "Sí, confirmar" : "Sí, rechazar"));
     }
@@ -162,6 +174,9 @@ export function iniciarConsulta({ alVencer, alCambiar, alRevisar }) {
         h("div", {}, h("h3", {}, e.titulo), h("p", {}, e.detalle))),
       h("div", { clase: "datos" }, dato(numero(l.filas), "lecturas por hora"), dato(numero(porEstacion.length), "estaciones con datos"),
         dato(numero(nuevas), "horas nuevas"), dato(numero(actualizadas), "horas que se completan")),
+      l.estado === "unificado" && r.unificado_en
+        ? h("p", {}, h("button", { clase: "boton boton--contorno-oscuro boton--pequeno", type: "button", onclick: () => abrir(r.unificado_en) }, `Ver el lote ${r.unificado_en}, que lo reemplaza`)) : null,
+      combinado(r.combina),
       h("p", {}, `Periodo: ${fecha(l.desde, false)} a ${fecha(l.hasta, false)}. Se consultó nivel y lluvia desde ${fecha(r.consulta?.nivel_desde, false)}.`),
       h("h3", {}, "Revisión automática"), hallazgos(r.validacion?.hallazgos), descartes(r.descartes),
       r.estaciones_sin_datos?.length ? h("p", { clase: "nota-suave" }, `Sin datos nuevos en: ${r.estaciones_sin_datos.map(nombreDe).join(", ")}.`) : null,
@@ -188,12 +203,7 @@ export function iniciarConsulta({ alVencer, alCambiar, alRevisar }) {
 
   async function descargar() {
     try {
-      const blob = await api.descargarLote(abierto.id);
-      const enlace = h("a", { href: URL.createObjectURL(blob), download: `lote_${abierto.id}.csv` });
-      document.body.append(enlace);
-      enlace.click();
-      enlace.remove();
-      URL.revokeObjectURL(enlace.href);
+      guardarArchivo(await api.descargarLote(abierto.id), `lote_${abierto.id}.csv`);
     } catch (error) {
       aviso("error", falla(error));
     }

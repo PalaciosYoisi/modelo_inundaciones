@@ -1,5 +1,6 @@
 // Lo que ve el público: el mapa, la lista de estaciones, el detalle de una estación y el apartado de confiabilidad.
 import { fecha, h, hace, icono, numero, porcentaje } from "./dom.js";
+import { API_URL } from "./config.js";
 import { graficaLinea } from "./grafica.js";
 
 // Textos sencillos para cada color del semáforo
@@ -62,6 +63,14 @@ function posibilidad(clase, texto, fraccion) {
   return h("div", { clase: `posibilidad posibilidad--${clase}` },
     h("div", { clase: "posibilidad__texto" }, h("span", {}, texto), h("span", {}, porcentaje(fraccion))),
     h("div", { clase: "posibilidad__pista" }, h("i", { style: `width:${Math.max((fraccion ?? 0) * 100, 0)}%` })));
+}
+
+// Descarga de los datos ya combinados (hora, nivel, lluvia y semáforo) en una hoja que se abre con Excel
+function descargas(e) {
+  const enlace = (texto, direccion) => h("a", { clase: "boton boton--contorno-oscuro boton--pequeno", href: `${API_URL}/descargas/datos.csv${direccion}` }, icono("descarga"), texto);
+  return h("div", { clase: "descargas" },
+    h("p", {}, "¿Quiere revisar los datos con calma? Descargue una hoja con la hora, el nivel del río, la lluvia y el semáforo de los últimos 120 días."),
+    h("div", { clase: "descargas__botones" }, enlace(`Descargar ${e.nombre}`, `?estacion=${encodeURIComponent(e.codigo)}`), enlace("Descargar todas las estaciones", "")));
 }
 
 // Los últimos 7 días se pueden ver como gráficas o como una tabla con una fila por día (la elección se recuerda al cambiar de estación).
@@ -139,6 +148,7 @@ export function vistaDetalle(e, umbralAviso) {
           h("p", {}, `Último nivel medido: ${numero(e.nivel_m, 2)} metros.`))
         : h("div", {}, h("p", {}, "Cuando la estación tenga más lecturas, aquí verá qué tan posible es cada caso."))),
     e.semaforo ? vistaDatos(historial, umbralAviso) : null,
+    e.ultima_lectura ? descargas(e) : null,
     h("p", { clase: "pie-detalle" }, "Este semáforo es una ayuda para anticiparse y no reemplaza los avisos oficiales de las autoridades."),
   ];
 }

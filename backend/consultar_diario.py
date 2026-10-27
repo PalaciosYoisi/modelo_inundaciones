@@ -19,7 +19,7 @@ import lotes
 from base_datos import ErrorBaseDatos
 from consulta import ErrorDeConsulta, consultar
 from pipeline import PipelineSemaforo, version_activa
-from preparacion import preparar, referencias_de
+from preparacion import preparar, referencias_de, resumir
 from publicacion import Publicacion
 from validacion import validar
 
@@ -68,9 +68,15 @@ def ejecutar(ahora: datetime | None = None) -> dict:
         resumen["validacion"] = {"estado": diagnostico["estado"], **diagnostico["resumen"],
                                  "hallazgos": [{k: h.get(k) for k in ("id", "severidad", "variable", "mensaje")} for h in diagnostico["hallazgos"]]}
         estado = "con_errores" if diagnostico["resumen"]["errores"] else "pendiente"
-        id_lote = lotes.crear("api", estado, tabla, resumen)
-        _auditar("consulta_diaria", {"resultado": estado, "lote": id_lote, "filas": len(tabla)})
+        anteriores = lotes.pendientes_con_datos() if estado == "pendiente" else []
+        if anteriores:                    # ya había datos esperando revisión: se combinan con los nuevos, dejando a la vista que son varias consultas
+            tabla, resumen["combina"] = lotes.unificar(tabla, anteriores)
+            resumen.update(resumir(tabla, publicado))
+        id_lote = lotes.crear("api", estado, tabla, resumen, unifica=[a["id"] for a in anteriores])
+        _auditar("consulta_diaria", {"resultado": estado, "lote": id_lote, "filas": len(tabla), "unifica": [a["id"] for a in anteriores]})
         mensaje = ("Hay un lote nuevo esperando revisión." if estado == "pendiente" else "Los datos nuevos traen errores y no se pueden confirmar.")
+        if anteriores:
+            mensaje = f"Los datos nuevos se combinaron con el lote pendiente anterior ({', '.join(str(a['id']) for a in anteriores)}). Revise la comparación."
         return {"estado": f"lote_{estado}", "lote": id_lote, "filas": len(tabla), "mensaje": mensaje}
     except (ErrorDeConsulta, ErrorBaseDatos) as error:
         _auditar("consulta_diaria", {"resultado": "error", "motivo": str(error)})

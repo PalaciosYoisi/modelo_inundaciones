@@ -54,6 +54,7 @@
         <button class="lateral__enlace" type="button" data-vista="resumen" aria-current="page"><svg aria-hidden="true"><use href="img/iconos.svg#semaforo"></use></svg>Resumen</button>
         <button class="lateral__enlace" type="button" data-vista="consulta"><svg aria-hidden="true"><use href="img/iconos.svg#lluvia"></use></svg>Consulta diaria<span class="insignia" id="insignia-consulta" hidden></span></button>
         <button class="lateral__enlace" type="button" data-vista="datos"><svg aria-hidden="true"><use href="img/iconos.svg#carga"></use></svg>Cargar archivo</button>
+        <button class="lateral__enlace" type="button" data-vista="descargas"><svg aria-hidden="true"><use href="img/iconos.svg#descarga"></use></svg>Descargas</button>
         <button class="lateral__enlace" type="button" data-vista="actividad"><svg aria-hidden="true"><use href="img/iconos.svg#reloj"></use></svg>Actividad</button>
         <button class="lateral__enlace" type="button" data-vista="equipo"><svg aria-hidden="true"><use href="img/iconos.svg#candado"></use></svg>Administradores</button>
       </nav>
@@ -134,6 +135,27 @@
             <div class="panel" role="tabpanel" id="adm-panel-publicacion" aria-labelledby="adm-pestana-publicacion" hidden><p class="vacio">Aquí verá el resultado de la publicación y los semáforos actualizados.</p></div>
           </article>
         </section>
+        <!-- ---------------------------------------------------------- Descargas -->
+        <section id="vista-descargas" hidden>
+          <article class="tarjeta">
+            <h2>Datos publicados</h2>
+            <p class="tarjeta__texto">Los datos combinados que usa el modelo: hora, nivel del río, lluvia y semáforo de cada hora.</p>
+            <div class="filtros">
+              <label for="desc-estacion">Estación</label>
+              <select id="desc-estacion"><option value="">Todas</option></select>
+              <label for="desc-dias">Periodo</label>
+              <select id="desc-dias"><option value="7">Últimos 7 días</option><option value="30">Últimos 30 días</option><option value="">Todo (120 días)</option></select>
+              <button class="boton boton--primario boton--pequeno" id="desc-datos" type="button"><svg aria-hidden="true"><use href="img/iconos.svg#descarga"></use></svg>Descargar</button>
+            </div>
+            <div class="aviso" id="desc-aviso" role="status" aria-live="polite" hidden></div>
+          </article>
+          <article class="tarjeta">
+            <h2>Datos consultados a datos.gov.co</h2>
+            <p class="tarjeta__texto">Cada consulta queda guardada como un lote. Puede descargar cualquiera, se haya confirmado o no.</p>
+            <div id="desc-lotes"><p class="vacio">Cargando…</p></div>
+          </article>
+        </section>
+
         <!-- ---------------------------------------------------------- Administradores -->
         <section id="vista-equipo" hidden>
           <article class="tarjeta">

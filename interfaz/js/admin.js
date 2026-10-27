@@ -1,7 +1,8 @@
 // Página del administrador: ingreso con clave, resumen de las estaciones y flujo de archivos (revisar, analizar y publicar).
 import * as api from "./api.js";
-import { h, hace, icono, numero, reemplazar, fecha } from "./dom.js";
+import { fecha, guardarArchivo, h, hace, icono, numero, reemplazar } from "./dom.js";
 import { iniciarConsulta } from "./consulta_diaria.js";
+import { iniciarDescargas } from "./descargas.js";
 import { vistaAnalisis, vistaPublicacion, vistaRevision } from "./vistas_admin.js";
 
 const $ = (id) => document.getElementById(id);
@@ -11,6 +12,7 @@ const pestanas = { revision: $("adm-pestana-revision"), analisis: $("adm-pestana
 const iniciales = new Map(Object.values(paneles).map((p) => [p, [...p.childNodes].map((n) => n.cloneNode(true))]));
 let archivo = null;
 let yo = null;
+const descargas = iniciarDescargas({ alVencer: () => { api.sesion.cerrar(); mostrarPanel(false); } });
 const consulta = iniciarConsulta({
   alVencer: () => { api.sesion.cerrar(); mostrarPanel(false); },
   alCambiar: () => cargarResumen(),
@@ -88,7 +90,7 @@ if (api.sesion.token()) {                         // si la pestaña ya tenía un
 }
 
 // ------------------------------------------------------------------ Menú lateral
-const TITULOS = { resumen: "Resumen", consulta: "Consulta diaria", datos: "Cargar archivo", actividad: "Actividad", equipo: "Administradores" };
+const TITULOS = { resumen: "Resumen", consulta: "Consulta diaria", datos: "Cargar archivo", descargas: "Descargas", actividad: "Actividad", equipo: "Administradores" };
 
 function irAVista(vista) {
   for (const enlace of document.querySelectorAll("[data-vista]")) {
@@ -99,6 +101,7 @@ function irAVista(vista) {
   $("lateral").classList.remove("lateral--abierto");
   if (vista === "resumen") { cargarResumen(); consulta.actualizarAviso(); }
   if (vista === "consulta") consulta.cargar();
+  if (vista === "descargas") descargas.cargar();
   if (vista === "actividad") cargarActividad();
   if (vista === "equipo") cargarEquipo();
 }
@@ -236,12 +239,7 @@ botones.publicar.addEventListener("click", () => ejecutar("Revisando y publicand
 
 async function descargar() {
   await ejecutar("Preparando el archivo…", async () => {
-    const blob = await api.descargarPredicciones(archivo);
-    const enlace = h("a", { href: URL.createObjectURL(blob), download: `predicciones_${archivo.name.replace(/\.[^.]+$/, "")}.csv` });
-    document.body.append(enlace);
-    enlace.click();
-    enlace.remove();
-    URL.revokeObjectURL(enlace.href);
+    guardarArchivo(await api.descargarPredicciones(archivo), `predicciones_${archivo.name.replace(/\.[^.]+$/, "")}.csv`);
   });
 }
 
@@ -250,12 +248,12 @@ const ACCIONES = {
   ingreso: "Ingresó", ingreso_fallido: "Intento de ingreso fallido", salida: "Cerró sesión", cambio_de_clave: "Cambió su clave",
   validar: "Revisó un archivo", analizar: "Analizó un archivo", predecir: "Hizo predicciones con un archivo",
   descargar_predicciones: "Descargó predicciones", publicar: "Publicó datos", publicar_rechazado: "Intentó publicar un archivo con errores",
-  desbloquear: "Desbloqueó a un administrador", consulta_manual: "Consultó datos.gov.co", consulta_diaria: "Consulta diaria automática",
+  desbloquear: "Desbloqueó a un administrador", descargar_datos: "Descargó los datos publicados", consulta_manual: "Consultó datos.gov.co", consulta_diaria: "Consulta diaria automática",
   descargar_lote: "Descargó un lote", confirmar_lote: "Confirmó un lote", confirmar_lote_fallido: "Confirmó un lote, pero falló la publicación", rechazar_lote: "Rechazó un lote",
 };
 const cuentaDe = (r) => {
   const d = r.detalle ?? {};
-  return [d.archivo && `Archivo: ${d.archivo}`, d.filas !== undefined && `${numero(d.filas)} filas`, d.errores && `${d.errores} errores`, d.motivo && `Motivo: ${d.motivo}`, d.usuario && `Persona: ${d.usuario}`, d.lote && `Lote ${d.lote}`, d.resultado && `Resultado: ${d.resultado}`].filter(Boolean).join(" · ");
+  return [d.archivo && `Archivo: ${d.archivo}`, d.filas !== undefined && `${numero(d.filas)} filas`, d.errores && `${d.errores} errores`, d.motivo && `Motivo: ${d.motivo}`, d.usuario && `Persona: ${d.usuario}`, d.lote && `Lote ${d.lote}`, d.estacion && `Estación: ${d.estacion}`, d.dias && `Periodo: ${d.dias === "todos" ? "todo" : `${d.dias} días`}`, d.resultado && `Resultado: ${d.resultado}`].filter(Boolean).join(" · ");
 };
 
 async function cargarActividad() {

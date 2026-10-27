@@ -29,6 +29,8 @@ from starlette.exceptions import HTTPException as ErrorHTTP
 import auditoria
 import consultar_diario
 import lotes
+import recomendacion
+import reportes
 import usuarios
 from base_datos import ErrorBaseDatos
 from eda import analizar
@@ -238,6 +240,10 @@ def ingresar(datos: Credenciales, request: Request):
     return sesion
 
 
+class Rechazo(BaseModel):
+    motivo: str = ""
+
+
 cuenta = APIRouter(prefix="/cuenta", tags=["Administrador"], dependencies=[Depends(exigir_sesion)])
 
 
@@ -261,6 +267,24 @@ def cambiar_clave(datos: CambioDeClave, request: Request, sesion: dict = Depends
         raise ErrorDeUsuario(error.mensaje, error.estado, error.codigo)
     auditar(request, sesion["usuario"], "cambio_de_clave")
     return {"estado": "ok"}
+
+
+# ------------------------------------------------------------------ descargas de datos combinados
+def _archivo_de_datos(estacion: str | None, dias: int | None) -> tuple[Response, int]:
+    pipeline = pipeline_activo()
+    if estacion and estacion not in pipeline.codigos:
+        raise ErrorDeUsuario("No existe esa estación.", 404, "ESTACION_NO_ENCONTRADA")
+    estaciones = pipeline.metadatos["estaciones"]
+    tabla = reportes.datos_combinados(publicacion().predicciones(pipeline), estaciones, estacion, dias)
+    nombre = reportes.nombre_de_archivo(estaciones, estacion, dias)
+    return Response(content=reportes.a_csv(tabla), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="{nombre}"'}), len(tabla)
+
+
+@app.get("/descargas/datos.csv", tags=["Público"], summary="Datos combinados (nivel, lluvia y semáforo por hora) en CSV")
+def descargar_datos(estacion: str | None = Query(None, description="Código de una estación; sin él, todas."),
+                    dias: int | None = Query(None, ge=1, le=120, description="Solo los últimos días; sin él, los 120 que se conservan.")):
+    return _archivo_de_datos(estacion, dias)[0]
 
 
 # ------------------------------------------------------------------ rutas del administrador (requieren sesión)
@@ -358,6 +382,14 @@ def _datos_del_lote(id_lote: int) -> pd.DataFrame:
         raise ErrorDeUsuario("Los datos de este lote ya no están disponibles.", 404, "LOTE_SIN_DATOS")
 
 
+@admin.get("/descargas/datos.csv", summary="Datos combinados en CSV (queda en la auditoría)")
+def descargar_datos_admin(request: Request, estacion: str | None = Query(None), dias: int | None = Query(None, ge=1, le=120),
+                          sesion: dict = Depends(exigir_administrador)):
+    respuesta, filas = _archivo_de_datos(estacion, dias)
+    auditar(request, sesion["usuario"], "descargar_datos", {"estacion": estacion or "todas", "dias": dias or "todos", "filas": filas})
+    return respuesta
+
+
 @admin.get("/lotes", summary="Lotes de datos nuevos y cuántos esperan revisión")
 def lista_de_lotes():
     return a_json_seguro({"pendientes": lotes.pendientes(), "lotes": lotes.listar()})
@@ -366,7 +398,12 @@ def lista_de_lotes():
 @admin.get("/lotes/{id_lote}", summary="Un lote: resumen, advertencias y datos diarios para revisarlo")
 def detalle_del_lote(id_lote: int):
     ficha = _lote(id_lote)
-    return a_json_seguro({**ficha, "diario": lotes.diario(_datos_del_lote(id_lote))})
+    try:                                  # la recomendación es una ayuda: si falla, el lote igual se puede revisar
+        nombres = {c: e["nombre"] for c, e in pipeline_activo().metadatos["estaciones"].items()}
+        aviso = recomendacion.recomendar(ficha, nombres)
+    except Exception:
+        aviso = None
+    return a_json_seguro({**ficha, "diario": lotes.diario(_datos_del_lote(id_lote)), "recomendacion": aviso})
 
 
 @admin.get("/lotes/{id_lote}/descargar", summary="Descargar las lecturas del lote (CSV)")
@@ -398,9 +435,10 @@ def confirmar_lote(id_lote: int, request: Request, sesion: dict = Depends(exigir
 
 
 @admin.post("/lotes/{id_lote}/rechazar", summary="Rechazar un lote: no llega al modelo")
-def rechazar_lote(id_lote: int, request: Request, sesion: dict = Depends(exigir_administrador)):
+def rechazar_lote(id_lote: int, request: Request, datos: Rechazo | None = None, sesion: dict = Depends(exigir_administrador)):
     _lote(id_lote)
-    auditar(request, sesion["usuario"], "rechazar_lote", {"lote": id_lote}, estricto=True)
+    motivo = ((datos.motivo if datos else "") or "").strip()[:300]
+    auditar(request, sesion["usuario"], "rechazar_lote", {"lote": id_lote, **({"motivo": motivo} if motivo else {})}, estricto=True)
     if not lotes.decidir(id_lote, "rechazado", sesion["usuario"]):
         raise ErrorDeUsuario("Este lote ya no está pendiente. Actualice la lista.", 409, "LOTE_NO_PENDIENTE")
     return {"estado": "ok"}
