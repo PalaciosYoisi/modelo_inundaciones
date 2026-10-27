@@ -1,9 +1,10 @@
 """Lotes: grupos de lecturas nuevas que esperan la decisión de un administrador antes de llegar al modelo.
 
 Estados: pendiente (esperando decisión), con_errores (no se puede confirmar), confirmado, rechazado y
-unificado (sus datos se combinaron con los de una consulta más nueva, que quedó como lote pendiente). La ficha del lote vive en MySQL; sus lecturas, en datos/lotes/.
+unificado (sus datos se combinaron con los de una consulta más nueva, que quedó como lote pendiente). La ficha del lote y sus lecturas viven en MySQL.
 Este módulo no publica nada: confirmar un lote (pasarlo a las lecturas publicadas) lo decide la API.
 """
+import io
 import json
 import os
 from datetime import datetime
@@ -14,20 +15,17 @@ import pandas as pd
 from base_datos import conexion
 
 RAIZ = Path(__file__).resolve().parents[1]
-CARPETA = Path(os.environ.get("SEMAFORO_LOTES", RAIZ / "datos" / "lotes"))
+CARPETA_ANTERIOR = Path(os.environ.get("SEMAFORO_LOTES", RAIZ / "datos" / "lotes"))      # lotes guardados como archivo en versiones anteriores
 ESTADOS_FINALES = ("confirmado", "rechazado")
 
 
 def crear(origen: str, estado: str, tabla: pd.DataFrame, resumen: dict, unifica: list[int] = ()) -> int:
     """Guarda un lote nuevo. Los lotes pendientes que se combinaron en él (unifica) quedan como unificados y apuntan al nuevo."""
-    CARPETA.mkdir(parents=True, exist_ok=True)
     with conexion() as cursor:
-        cursor.execute("INSERT INTO lotes (creado, origen, estado, desde, hasta, filas, resumen, archivo) VALUES (%s, %s, %s, %s, %s, %s, %s, '')",
-                       (datetime.now(), origen, estado, resumen.get("desde"), resumen.get("hasta"), len(tabla), json.dumps(resumen, ensure_ascii=False, default=str)))
+        cursor.execute("INSERT INTO lotes (creado, origen, estado, desde, hasta, filas, resumen, archivo, datos) VALUES (%s, %s, %s, %s, %s, %s, %s, '', %s)",
+                       (datetime.now(), origen, estado, resumen.get("desde"), resumen.get("hasta"), len(tabla), json.dumps(resumen, ensure_ascii=False, default=str),
+                        tabla.to_csv(index=False)))
         id_lote = cursor.lastrowid
-        archivo = f"lote_{id_lote}.csv"
-        tabla.to_csv(CARPETA / archivo, index=False)
-        cursor.execute("UPDATE lotes SET archivo=%s WHERE id=%s", (archivo, id_lote))
         for anterior in unifica:
             cursor.execute("SELECT resumen FROM lotes WHERE id=%s", (anterior,))
             ficha = json.loads(cursor.fetchone()["resumen"] or "{}")
@@ -49,16 +47,24 @@ def listar(estado: str | None = None, limite: int = 20) -> list[dict]:
 
 def obtener(id_lote: int) -> dict | None:
     with conexion() as cursor:
-        cursor.execute("SELECT * FROM lotes WHERE id=%s", (id_lote,))
+        cursor.execute("SELECT id, creado, origen, estado, desde, hasta, filas, resumen, decidido_por, decidido_en FROM lotes WHERE id=%s", (id_lote,))
         fila = cursor.fetchone()
     return None if fila is None else _ficha(fila)
 
 
 def datos(id_lote: int) -> pd.DataFrame:
-    ficha = obtener(id_lote)
-    if ficha is None or not (CARPETA / ficha["archivo"]).exists():
+    with conexion() as cursor:
+        cursor.execute("SELECT datos, archivo FROM lotes WHERE id=%s", (id_lote,))
+        fila = cursor.fetchone()
+    if fila is None:
         raise FileNotFoundError(id_lote)
-    return pd.read_csv(CARPETA / ficha["archivo"], dtype={"estacion": str}, parse_dates=["fecha_hora"])
+    if fila["datos"]:
+        origen = io.StringIO(fila["datos"])
+    elif fila["archivo"] and (CARPETA_ANTERIOR / fila["archivo"]).exists():          # lote guardado como archivo en una versión anterior
+        origen = CARPETA_ANTERIOR / fila["archivo"]
+    else:
+        raise FileNotFoundError(id_lote)
+    return pd.read_csv(origen, dtype={"estacion": str}, parse_dates=["fecha_hora"])
 
 
 def pendientes() -> int:

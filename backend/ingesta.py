@@ -17,7 +17,7 @@ from validacion import validar
 
 RAIZ = Path(__file__).resolve().parents[1]
 CARPETA_MODELOS = Path(os.environ.get("SEMAFORO_MODELOS", RAIZ / "modelos"))
-CARPETA_PUBLICADO = Path(os.environ.get("SEMAFORO_PUBLICADO", RAIZ / "datos" / "publicado"))
+PUBLICADO_ANTERIOR = RAIZ / "datos" / "publicado" / "lecturas.csv"       # lo publicado en versiones anteriores, que guardaban un archivo
 DATOS_INICIALES = RAIZ / "datos" / "datos_horarios.csv"
 PLUVIOMETROS = RAIZ / "datos" / "pluviometros.json"
 LLAVES = ["estacion", "fecha_hora"]

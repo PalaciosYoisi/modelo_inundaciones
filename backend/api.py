@@ -35,7 +35,7 @@ import recomendacion
 import reportes
 import usuarios
 from base_datos import ErrorBaseDatos
-from ingesta import CARPETA_MODELOS, CARPETA_PUBLICADO, DATOS_INICIALES
+from ingesta import CARPETA_MODELOS, DATOS_INICIALES, PUBLICADO_ANTERIOR
 from eda import analizar
 from pipeline import PipelineSemaforo, normalizar_tabla, version_activa
 from publicacion import Publicacion
@@ -127,7 +127,7 @@ def pipeline_activo() -> PipelineSemaforo:
 
 @lru_cache(maxsize=1)
 def publicacion() -> Publicacion:
-    return Publicacion(CARPETA_PUBLICADO, DATOS_INICIALES)
+    return Publicacion(DATOS_INICIALES, PUBLICADO_ANTERIOR)
 
 
 def exigir_sesion(authorization: str | None = Header(None, description="Sesión del administrador: «Bearer <token>».")) -> dict:

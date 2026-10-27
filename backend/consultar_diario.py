@@ -38,7 +38,7 @@ def ejecutar(ahora: datetime | None = None) -> dict:
     ahora = ahora or datetime.now()
     try:
         pipeline = PipelineSemaforo.cargar(ingesta.CARPETA_MODELOS / version_activa(ingesta.CARPETA_MODELOS))
-        ctx = ingesta.contexto(pipeline, Publicacion(ingesta.CARPETA_PUBLICADO, ingesta.DATOS_INICIALES))
+        ctx = ingesta.contexto(pipeline, Publicacion(ingesta.DATOS_INICIALES, ingesta.PUBLICADO_ANTERIOR))
         desde_nivel, desde_lluvia = _desde(ctx.publicado, "nivel_m", ctx.codigos, ahora), _desde(ctx.publicado, "lluvia_mm", ctx.codigos, ahora)
         nivel = consultar("nivel", ctx.codigos, desde_nivel)
         lluvia = consultar("lluvia", ctx.pluviometros, desde_lluvia)
