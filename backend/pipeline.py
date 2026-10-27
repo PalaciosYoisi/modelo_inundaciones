@@ -132,6 +132,12 @@ def variables_estacion(tabla: pd.DataFrame, referencia, escala: float, parametro
 NOMBRE_METADATOS = "metadatos.json"
 
 
+def version_activa(carpeta_modelos, por_defecto: str = "v3") -> str:
+    """Nombre de la versión del modelo que está en uso (la que dice modelos/activo.txt)."""
+    archivo = Path(carpeta_modelos) / "activo.txt"
+    return archivo.read_text(encoding="utf-8").strip() if archivo.exists() else por_defecto
+
+
 def cargar_metadatos(carpeta) -> dict:
     ruta = Path(carpeta) / NOMBRE_METADATOS
     if not ruta.exists():

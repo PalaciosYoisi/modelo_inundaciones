@@ -1,6 +1,6 @@
 """Conexión a MySQL (XAMPP/MariaDB sirve) y creación de las tablas del sistema.
 
-Guarda solo lo necesario: usuarios, sesiones y auditoría. Las lecturas del río siguen en archivos CSV.
+Guarda solo lo necesario: usuarios, sesiones, auditoría y la ficha de los lotes de datos. Las lecturas del río siguen en archivos CSV.
 Si la base no está disponible, solo fallan el ingreso y la auditoría; lo que ve el público no depende de ella.
 
 Datos de conexión (variables de entorno o archivo backend/.env, una línea «NOMBRE=valor»):
@@ -32,6 +32,20 @@ TABLAS = [
         usuario VARCHAR(30) NOT NULL,
         expira DATETIME NOT NULL,
         FOREIGN KEY (usuario) REFERENCES usuarios(usuario) ON DELETE CASCADE
+    ) DEFAULT CHARSET=utf8mb4""",
+    """CREATE TABLE IF NOT EXISTS lotes (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        creado DATETIME NOT NULL,
+        origen VARCHAR(20) NOT NULL,
+        estado VARCHAR(15) NOT NULL,
+        desde DATETIME NULL,
+        hasta DATETIME NULL,
+        filas INT NOT NULL,
+        resumen LONGTEXT NULL,
+        archivo VARCHAR(80) NOT NULL,
+        decidido_por VARCHAR(30) NULL,
+        decidido_en DATETIME NULL,
+        INDEX (estado)
     ) DEFAULT CHARSET=utf8mb4""",
     """CREATE TABLE IF NOT EXISTS auditoria (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -107,4 +121,4 @@ def crear_tablas() -> str:
 
 
 if __name__ == "__main__":
-    print(f"Base «{crear_tablas()}» lista: tablas usuarios, sesiones y auditoria.")
+    print(f"Base «{crear_tablas()}» lista: tablas usuarios, sesiones, lotes y auditoria.")

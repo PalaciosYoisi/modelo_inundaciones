@@ -11,6 +11,7 @@ pluviómetro y pluviómetros con promedios diarios imposibles.
 
 Uso:  python preparar_datos.py
 """
+import json
 import re
 import sys
 import unicodedata
@@ -29,6 +30,7 @@ ARCHIVOS_LLUVIA = ["Precipitación_20261026_2022.csv", "Precipitación_20261016.
 ARCHIVOS_NIVEL = ["Nivel_Instantáneo_del_Rio_20261026_2022.csv", "Nivel_Instantáneo_del_Rio_20261016.csv",
                   "Nivel_Instantáneo_del_Rio_20261026.csv"]
 SALIDA = RUTA / "datos_horarios.csv"
+SALIDA_PLUVIOMETROS = RUTA / "pluviometros.json"      # qué pluviómetros usa cada estación; lo lee backend/preparacion.py
 
 RADIO_LLUVIA_KM = 25        # distancia máxima entre la estación de nivel y un pluviómetro que se usa para ella
 MAX_PLUVIOMETROS = 3        # cuántos pluviómetros cercanos se promedian
@@ -160,7 +162,7 @@ def limpiar_lluvia(lluvia):
     imposibles = promedio[promedio > 60].index
     print(f"Lluvia: {len(dias_absurdos)} días de más de 500 mm descartados | {len(imposibles)} pluviómetros con promedio imposible")
     lluvia = lluvia.merge(dias_absurdos, on=["CodigoEstacion", "fecha"], how="left")
-    return lluvia[lluvia["malo"].isna() & ~lluvia["CodigoEstacion"].isin(imposibles)].drop(columns=["malo", "fecha"])
+    return lluvia[lluvia["malo"].isna() & ~lluvia["CodigoEstacion"].isin(imposibles)].drop(columns=["malo", "fecha"]), acumuladas
 
 
 def picos_aislados(serie_horaria):
@@ -188,7 +190,7 @@ def main():
     print("== Lluvia");  lluvia = cargar_ideam(ARCHIVOS_LLUVIA, "Lluvia")
     print("== Nivel");   nivel = cargar_ideam(ARCHIVOS_NIVEL, "Nivel")
     nivel = limpiar_nivel(nivel)
-    lluvia = limpiar_lluvia(lluvia)
+    lluvia, acumuladas = limpiar_lluvia(lluvia)
 
     coordenadas = pd.concat([nivel, lluvia]).groupby("CodigoEstacion")[["lat", "lon"]].median()
     nivel["h"] = nivel["fecha_hora"].dt.floor("h")
@@ -204,11 +206,12 @@ def main():
     repetido = info.duplicated(["municipio", "nombre_estacion"], keep=False)
     info.loc[repetido, "nombre_estacion"] += " " + info.index[repetido]
 
-    partes, resumen = [], []
+    partes, resumen, pluviometros = [], [], {}
     for codigo, e in info.iterrows():
         cerca = sorted((distancia_km(*coordenadas.loc[codigo, ["lat", "lon"]], *coordenadas.loc[r, ["lat", "lon"]]), r)
                        for r in lluvia_h.columns)
         pluv = [r for d, r in cerca if d <= RADIO_LLUVIA_KM][:MAX_PLUVIOMETROS]
+        pluviometros[codigo] = pluv
         serie_nivel = nivel_h[codigo].dropna()
         horas = pd.date_range(serie_nivel.index.min(), serie_nivel.index.max(), freq="h")
         d = pd.DataFrame({"fecha_hora": horas})
@@ -234,6 +237,7 @@ def main():
     df["nivel_m"] = df["nivel_m"].round(3)
     df["lluvia_mm"] = df["lluvia_mm"].round(2)
     df.to_csv(SALIDA, index=False)
+    SALIDA_PLUVIOMETROS.write_text(json.dumps({"radio_km": RADIO_LLUVIA_KM, "estaciones": pluviometros, "acumulados": sorted(acumuladas)}, indent=1), encoding="utf-8")
     print(f"\nGuardado: {SALIDA} | {len(df):,} filas")
 
 

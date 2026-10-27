@@ -21,6 +21,7 @@
       <h1>Río<b>Alerta</b></h1>
       <p>Acceso de administradores</p>
       <label for="usuario-admin">Usuario</label>
+      <small class="ingreso__ayuda">Es su nombre corto, sin espacios (por ejemplo, yoisi).</small>
       <input id="usuario-admin" type="text" autocomplete="username" autocapitalize="none" required autofocus>
       <label for="clave-admin">Clave</label>
       <input id="clave-admin" type="password" autocomplete="current-password" required>
@@ -51,8 +52,10 @@
       </a>
       <nav class="lateral__menu" aria-label="Secciones">
         <button class="lateral__enlace" type="button" data-vista="resumen" aria-current="page"><svg aria-hidden="true"><use href="img/iconos.svg#semaforo"></use></svg>Resumen</button>
-        <button class="lateral__enlace" type="button" data-vista="datos"><svg aria-hidden="true"><use href="img/iconos.svg#carga"></use></svg>Datos nuevos</button>
+        <button class="lateral__enlace" type="button" data-vista="consulta"><svg aria-hidden="true"><use href="img/iconos.svg#lluvia"></use></svg>Consulta diaria<span class="insignia" id="insignia-consulta" hidden></span></button>
+        <button class="lateral__enlace" type="button" data-vista="datos"><svg aria-hidden="true"><use href="img/iconos.svg#carga"></use></svg>Cargar archivo</button>
         <button class="lateral__enlace" type="button" data-vista="actividad"><svg aria-hidden="true"><use href="img/iconos.svg#reloj"></use></svg>Actividad</button>
+        <button class="lateral__enlace" type="button" data-vista="equipo"><svg aria-hidden="true"><use href="img/iconos.svg#candado"></use></svg>Administradores</button>
       </nav>
       <a class="lateral__enlace lateral__enlace--pie" href="index.html"><svg aria-hidden="true"><use href="img/iconos.svg#mapa"></use></svg>Ver sitio público</a>
     </aside>
@@ -68,6 +71,10 @@
       <main class="contenido">
         <!-- ---------------------------------------------------------- Resumen -->
         <section id="vista-resumen" aria-labelledby="titulo-vista">
+          <div class="aviso-lote" id="aviso-lote" hidden>
+            <span>Hay datos nuevos de datos.gov.co esperando su revisión.</span>
+            <button class="boton boton--primario boton--pequeno" id="ir-a-consulta" type="button">Revisar</button>
+          </div>
           <div class="indicadores" id="indicadores" aria-live="polite"></div>
           <article class="tarjeta">
             <h2>Estaciones publicadas</h2>
@@ -76,10 +83,22 @@
           </article>
         </section>
 
+        <!-- ---------------------------------------------------------- Consulta diaria -->
+        <section id="vista-consulta" hidden>
+          <article class="tarjeta">
+            <h2>Datos nuevos de datos.gov.co</h2>
+            <p class="tarjeta__texto">Cada día el sistema consulta los datos del IDEAM y los deja aquí. Usted los revisa y decide si pasan al modelo.</p>
+            <div class="acciones"><button class="boton boton--primario" id="cons-ahora" type="button"><svg aria-hidden="true"><use href="img/iconos.svg#lluvia"></use></svg>Consultar ahora</button></div>
+            <div class="aviso" id="cons-aviso" role="status" aria-live="polite" hidden></div>
+            <div id="cons-lista"><p class="vacio">Cargando…</p></div>
+          </article>
+          <article class="tarjeta" id="cons-detalle" hidden></article>
+        </section>
+
         <!-- ---------------------------------------------------------- Datos nuevos -->
         <section id="vista-datos" hidden>
           <article class="tarjeta">
-            <h2>Archivo de lecturas</h2>
+            <h2>Cargar un archivo de lecturas</h2>
             <p class="tarjeta__texto">Suba un archivo con lecturas recientes. Primero se revisa; si está bien, se agrega y los semáforos del público se actualizan.</p>
             <div class="carga" id="adm-zona-carga">
               <input class="carga__entrada" id="adm-archivo" type="file" accept=".csv,.xlsx" aria-label="Elegir archivo CSV o Excel">
@@ -115,6 +134,15 @@
             <div class="panel" role="tabpanel" id="adm-panel-publicacion" aria-labelledby="adm-pestana-publicacion" hidden><p class="vacio">Aquí verá el resultado de la publicación y los semáforos actualizados.</p></div>
           </article>
         </section>
+        <!-- ---------------------------------------------------------- Administradores -->
+        <section id="vista-equipo" hidden>
+          <article class="tarjeta">
+            <h2>Administradores</h2>
+            <p class="tarjeta__texto">Si alguien se bloquea por equivocarse varias veces con la clave, otro administrador puede desbloquearlo aquí.</p>
+            <div id="tabla-equipo"><p class="vacio">Cargando…</p></div>
+          </article>
+        </section>
+
         <!-- ---------------------------------------------------------- Actividad -->
         <section id="vista-actividad" hidden>
           <article class="tarjeta">

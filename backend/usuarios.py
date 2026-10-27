@@ -65,6 +65,28 @@ def restablecer(usuario: str) -> str:
     return clave
 
 
+def estado_de_todos(ahora: datetime | None = None) -> list[dict]:
+    """Todos los administradores y si alguno está bloqueado, para que otro pueda desbloquearlo."""
+    ahora = ahora or datetime.now()
+    with conexion() as cursor:
+        cursor.execute("SELECT usuario, nombre, debe_cambiar_clave, intentos_fallidos, bloqueado_hasta FROM usuarios ORDER BY usuario")
+        filas = cursor.fetchall()
+    return [{"usuario": f["usuario"], "nombre": f["nombre"], "debe_cambiar_clave": bool(f["debe_cambiar_clave"]), "intentos_fallidos": f["intentos_fallidos"],
+             "bloqueado": bool(f["bloqueado_hasta"] and f["bloqueado_hasta"] > ahora),
+             "bloqueado_hasta": f["bloqueado_hasta"] if f["bloqueado_hasta"] and f["bloqueado_hasta"] > ahora else None} for f in filas]
+
+
+def desbloquear(usuario: str) -> None:
+    usuario, existe = _limpio(usuario), False
+    with conexion() as cursor:
+        cursor.execute("SELECT usuario FROM usuarios WHERE usuario=%s", (usuario,))
+        existe = cursor.fetchone() is not None
+        if existe:
+            cursor.execute("UPDATE usuarios SET intentos_fallidos=0, bloqueado_hasta=NULL WHERE usuario=%s", (usuario,))
+    if not existe:
+        raise ErrorDeAcceso("Ese usuario no existe.", "USUARIO_NO_EXISTE", 404)
+
+
 def listar() -> list[dict]:
     with conexion() as cursor:
         cursor.execute("SELECT usuario, nombre, debe_cambiar_clave FROM usuarios ORDER BY usuario")

@@ -140,3 +140,26 @@ body.adm { background: #eaf0f5; }
 .filtros { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1rem; margin-bottom: 1.2rem; }
 .filtros label { font-weight: 800; }
 .filtros select { padding: .55rem .9rem; font: inherit; border: 2px solid var(--linea); border-radius: var(--radio); background: var(--blanco); color: var(--texto); }
+
+.ingreso__ayuda { color: var(--texto-suave); margin: -.2rem 0 .5rem; }
+.tabla button { white-space: nowrap; }
+
+/* ---------------------------------------------------------------- Consulta diaria */
+.insignia { margin-left: auto; min-width: 1.4rem; height: 1.4rem; padding: 0 .4rem; display: inline-grid; place-items: center; border-radius: 999px; background: var(--rojo); color: var(--blanco); font-size: .78rem; font-weight: 900; }
+.insignia[hidden] { display: none; }
+.aviso-lote { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .8rem 1.5rem; padding: 1rem 1.3rem; border-radius: var(--radio-grande); background: var(--amarillo-suave); border: 1px solid #f0d68b; font-weight: 700; }
+.aviso-lote[hidden] { display: none; }
+.estado--gris { --c: #94a3b3; background: var(--gris); }
+.estado--aviso { --c: #d99a0b; background: var(--amarillo-suave); border-color: #f0d68b; }
+.confirmar { display: flex; flex-wrap: wrap; align-items: center; gap: .8rem 1rem; padding: 1rem 1.2rem; border-radius: var(--radio); background: var(--agua-suave); border: 1px solid #b4e3ea; margin-top: 1.2rem; }
+.confirmar p { margin: 0; flex: 1 1 260px; font-weight: 700; }
+.cabecera-lote { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .6rem 1rem; margin-bottom: 1rem; }
+.cabecera-lote h2 { margin: 0; }
+.lote-estacion { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1rem; margin: 1.6rem 0 1rem; }
+.lote-estacion label { font-weight: 800; }
+.lote-estacion select { padding: .55rem .9rem; font: inherit; border: 2px solid var(--linea); border-radius: var(--radio); background: var(--blanco); color: var(--texto); }
+.lote-estacion .conmutador { margin-left: auto; }
+.tabla--alta { max-height: 420px; overflow-y: auto; }
+.tabla--alta th { position: sticky; top: 0; }
+.acciones-lote { display: flex; flex-wrap: wrap; gap: .8rem; margin-top: 1.4rem; }
+@media (max-width: 680px) { .acciones-lote .boton { width: 100%; } .lote-estacion .conmutador { margin-left: 0; } }

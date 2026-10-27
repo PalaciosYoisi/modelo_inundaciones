@@ -1,6 +1,7 @@
 // Página del administrador: ingreso con clave, resumen de las estaciones y flujo de archivos (revisar, analizar y publicar).
 import * as api from "./api.js";
 import { h, hace, icono, numero, reemplazar, fecha } from "./dom.js";
+import { iniciarConsulta } from "./consulta_diaria.js";
 import { vistaAnalisis, vistaPublicacion, vistaRevision } from "./vistas_admin.js";
 
 const $ = (id) => document.getElementById(id);
@@ -10,6 +11,11 @@ const pestanas = { revision: $("adm-pestana-revision"), analisis: $("adm-pestana
 const iniciales = new Map(Object.values(paneles).map((p) => [p, [...p.childNodes].map((n) => n.cloneNode(true))]));
 let archivo = null;
 let yo = null;
+const consulta = iniciarConsulta({
+  alVencer: () => { api.sesion.cerrar(); mostrarPanel(false); },
+  alCambiar: () => cargarResumen(),
+  alRevisar: () => irAVista("consulta"),
+});
 
 // ------------------------------------------------------------------ Ingreso y salida
 const mostrar = (nodo, visible) => { nodo.hidden = !visible; };
@@ -20,6 +26,7 @@ function mostrarPanel(visible, persona = null) {
   if (visible) {
     $("nombre-admin").textContent = persona?.nombre ?? "Administrador";
     irAVista("resumen");
+    consulta.actualizarAviso();
   } else {
     mostrar($("form-admin"), true);
     mostrar($("form-clave"), false);
@@ -81,7 +88,7 @@ if (api.sesion.token()) {                         // si la pestaña ya tenía un
 }
 
 // ------------------------------------------------------------------ Menú lateral
-const TITULOS = { resumen: "Resumen", datos: "Datos nuevos", actividad: "Actividad" };
+const TITULOS = { resumen: "Resumen", consulta: "Consulta diaria", datos: "Cargar archivo", actividad: "Actividad", equipo: "Administradores" };
 
 function irAVista(vista) {
   for (const enlace of document.querySelectorAll("[data-vista]")) {
@@ -90,8 +97,10 @@ function irAVista(vista) {
   for (const nombre of Object.keys(TITULOS)) mostrar($(`vista-${nombre}`), nombre === vista);
   $("titulo-vista").textContent = TITULOS[vista];
   $("lateral").classList.remove("lateral--abierto");
-  if (vista === "resumen") cargarResumen();
+  if (vista === "resumen") { cargarResumen(); consulta.actualizarAviso(); }
+  if (vista === "consulta") consulta.cargar();
   if (vista === "actividad") cargarActividad();
+  if (vista === "equipo") cargarEquipo();
 }
 document.querySelectorAll("[data-vista]").forEach((e) => e.addEventListener("click", () => irAVista(e.dataset.vista)));
 $("abrir-menu").addEventListener("click", () => $("lateral").classList.toggle("lateral--abierto"));
@@ -241,10 +250,12 @@ const ACCIONES = {
   ingreso: "Ingresó", ingreso_fallido: "Intento de ingreso fallido", salida: "Cerró sesión", cambio_de_clave: "Cambió su clave",
   validar: "Revisó un archivo", analizar: "Analizó un archivo", predecir: "Hizo predicciones con un archivo",
   descargar_predicciones: "Descargó predicciones", publicar: "Publicó datos", publicar_rechazado: "Intentó publicar un archivo con errores",
+  desbloquear: "Desbloqueó a un administrador", consulta_manual: "Consultó datos.gov.co", consulta_diaria: "Consulta diaria automática",
+  descargar_lote: "Descargó un lote", confirmar_lote: "Confirmó un lote", confirmar_lote_fallido: "Confirmó un lote, pero falló la publicación", rechazar_lote: "Rechazó un lote",
 };
 const cuentaDe = (r) => {
   const d = r.detalle ?? {};
-  return [d.archivo && `Archivo: ${d.archivo}`, d.filas !== undefined && `${numero(d.filas)} filas`, d.errores && `${d.errores} errores`, d.motivo && `Motivo: ${d.motivo}`].filter(Boolean).join(" · ");
+  return [d.archivo && `Archivo: ${d.archivo}`, d.filas !== undefined && `${numero(d.filas)} filas`, d.errores && `${d.errores} errores`, d.motivo && `Motivo: ${d.motivo}`, d.usuario && `Persona: ${d.usuario}`, d.lote && `Lote ${d.lote}`, d.resultado && `Resultado: ${d.resultado}`].filter(Boolean).join(" · ");
 };
 
 async function cargarActividad() {
@@ -270,3 +281,28 @@ async function cargarActividad() {
 }
 $("filtro-usuario").addEventListener("change", cargarActividad);
 $("filtro-accion").addEventListener("change", cargarActividad);
+// ------------------------------------------------------------------ Administradores (desbloquear)
+async function cargarEquipo() {
+  try {
+    const lista = await api.administradores();
+    const estado = (a) => (a.bloqueado ? h("span", { clase: "etiqueta etiqueta--rojo" }, `Bloqueado hasta las ${new Date(a.bloqueado_hasta.replace(" ", "T")).toLocaleTimeString("es-CO", { hour: "numeric", minute: "2-digit" })}`)
+      : a.debe_cambiar_clave ? h("span", { clase: "etiqueta etiqueta--amarillo" }, "Debe cambiar su clave") : h("span", { clase: "etiqueta etiqueta--verde" }, "Activo"));
+    reemplazar($("tabla-equipo"), h("div", { clase: "tabla" }, h("table", {},
+      h("thead", {}, h("tr", {}, ["Usuario", "Nombre", "Estado", ""].map((x) => h("th", {}, x)))),
+      h("tbody", {}, lista.map((a) => h("tr", {}, h("td", {}, h("b", {}, a.usuario)), h("td", {}, a.nombre), h("td", {}, estado(a)),
+        h("td", {}, a.bloqueado ? h("button", { clase: "boton boton--contorno-oscuro boton--pequeno", type: "button", onclick: () => desbloquear(a.usuario) }, "Desbloquear") : null)))))));
+  } catch (error) {
+    if (error.estado === 401) { api.sesion.cerrar(); mostrarPanel(false); }
+    reemplazar($("tabla-equipo"), h("p", { clase: "vacio" }, error.message));
+  }
+}
+
+async function desbloquear(usuario) {
+  try {
+    await api.desbloquear(usuario);
+  } catch (error) {
+    reemplazar($("tabla-equipo"), h("p", { clase: "vacio" }, error.message));
+    return;
+  }
+  cargarEquipo();
+}

@@ -52,6 +52,14 @@ export const ingresar = async (usuario, clave) => (await pedir("/sesion", json({
 export const quienSoy = async () => (await pedir("/cuenta/yo", { conSesion: true })).json();
 export const salir = async () => (await pedir("/cuenta/salir", { method: "POST", conSesion: true })).json();
 export const cambiarClave = async (actual, nueva) => (await pedir("/cuenta/clave", { ...json({ actual, nueva }), conSesion: true })).json();
+export const lotes = async () => (await pedir("/admin/lotes", { conSesion: true })).json();
+export const lote = async (id) => (await pedir(`/admin/lotes/${id}`, { conSesion: true })).json();
+export const descargarLote = async (id) => (await pedir(`/admin/lotes/${id}/descargar`, { conSesion: true })).blob();
+export const confirmarLote = async (id) => (await pedir(`/admin/lotes/${id}/confirmar`, { method: "POST", conSesion: true })).json();
+export const rechazarLote = async (id) => (await pedir(`/admin/lotes/${id}/rechazar`, { method: "POST", conSesion: true })).json();
+export const consultarAhora = async () => (await pedir("/admin/consulta/ejecutar", { method: "POST", conSesion: true })).json();
+export const administradores = async () => (await pedir("/admin/administradores", { conSesion: true })).json();
+export const desbloquear = async (usuario) => (await pedir(`/admin/administradores/${encodeURIComponent(usuario)}/desbloquear`, { method: "POST", conSesion: true })).json();
 export const actividad = async (usuario, accion) => {
   const filtros = new URLSearchParams({ ...(usuario && { usuario }), ...(accion && { accion }) });
   return (await pedir(`/admin/actividad?${filtros}`, { conSesion: true })).json();

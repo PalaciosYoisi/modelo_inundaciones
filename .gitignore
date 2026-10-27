@@ -4,3 +4,4 @@
 .venv/
 datos/publicado/
 backend/.env
+datos/lotes/

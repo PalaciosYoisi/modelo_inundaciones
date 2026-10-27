@@ -27,10 +27,12 @@ from pydantic import BaseModel
 from starlette.exceptions import HTTPException as ErrorHTTP
 
 import auditoria
+import consultar_diario
+import lotes
 import usuarios
 from base_datos import ErrorBaseDatos
 from eda import analizar
-from pipeline import PipelineSemaforo, normalizar_tabla
+from pipeline import PipelineSemaforo, normalizar_tabla, version_activa
 from publicacion import Publicacion
 from validacion import validar
 
@@ -114,10 +116,8 @@ def _cargar(version: str) -> PipelineSemaforo:
 
 
 def pipeline_activo() -> PipelineSemaforo:
-    archivo = CARPETA_MODELOS / "activo.txt"
-    version = archivo.read_text(encoding="utf-8").strip() if archivo.exists() else "v3"
     try:
-        return _cargar(version)
+        return _cargar(version_activa(CARPETA_MODELOS))
     except FileNotFoundError as error:
         raise ErrorDeUsuario(str(error), 404, "MODELO_NO_DISPONIBLE")
 
@@ -326,6 +326,91 @@ def publicar(request: Request, archivo: UploadFile = File(..., description="CSV 
     auditar(request, sesion["usuario"], "publicar", {"archivo": nombre, "filas": len(tabla)}, estricto=True)
     cambios = publicacion().integrar(normalizar_tabla(tabla), pipeline.codigos)
     return a_json_seguro({"archivo": nombre, "validacion": diagnostico, "cambios": cambios, **publicacion().estaciones(pipeline)})
+
+
+@admin.get("/administradores", summary="Administradores y su estado (para desbloquear a quien se haya bloqueado)")
+def administradores():
+    return a_json_seguro(usuarios.estado_de_todos())
+
+
+@admin.post("/administradores/{usuario}/desbloquear", summary="Desbloquear a otro administrador")
+def desbloquear(usuario: str, request: Request, sesion: dict = Depends(exigir_administrador)):
+    auditar(request, sesion["usuario"], "desbloquear", {"usuario": usuario}, estricto=True)
+    try:
+        usuarios.desbloquear(usuario)
+    except usuarios.ErrorDeAcceso as error:
+        raise ErrorDeUsuario(error.mensaje, error.estado, error.codigo)
+    return {"estado": "ok"}
+
+
+# ------------------------------------------------------------------ consulta diaria: lotes de datos nuevos
+def _lote(id_lote: int) -> dict:
+    ficha = lotes.obtener(id_lote)
+    if ficha is None:
+        raise ErrorDeUsuario("No existe ese lote.", 404, "LOTE_NO_ENCONTRADO")
+    return ficha
+
+
+def _datos_del_lote(id_lote: int) -> pd.DataFrame:
+    try:
+        return lotes.datos(id_lote)
+    except FileNotFoundError:
+        raise ErrorDeUsuario("Los datos de este lote ya no están disponibles.", 404, "LOTE_SIN_DATOS")
+
+
+@admin.get("/lotes", summary="Lotes de datos nuevos y cuántos esperan revisión")
+def lista_de_lotes():
+    return a_json_seguro({"pendientes": lotes.pendientes(), "lotes": lotes.listar()})
+
+
+@admin.get("/lotes/{id_lote}", summary="Un lote: resumen, advertencias y datos diarios para revisarlo")
+def detalle_del_lote(id_lote: int):
+    ficha = _lote(id_lote)
+    return a_json_seguro({**ficha, "diario": lotes.diario(_datos_del_lote(id_lote))})
+
+
+@admin.get("/lotes/{id_lote}/descargar", summary="Descargar las lecturas del lote (CSV)")
+def descargar_lote(id_lote: int, request: Request, sesion: dict = Depends(exigir_administrador)):
+    _lote(id_lote)
+    tabla = _datos_del_lote(id_lote)
+    auditar(request, sesion["usuario"], "descargar_lote", {"lote": id_lote, "filas": len(tabla)})
+    return Response(content=tabla.to_csv(index=False).encode("utf-8-sig"), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="lote_{id_lote}.csv"'})
+
+
+@admin.post("/lotes/{id_lote}/confirmar", summary="Confirmar un lote: sus lecturas pasan a lo publicado y al modelo")
+def confirmar_lote(id_lote: int, request: Request, sesion: dict = Depends(exigir_administrador)):
+    ficha = _lote(id_lote)
+    if ficha["estado"] != "pendiente":
+        raise ErrorDeUsuario("Este lote ya no está pendiente (se confirmó, se rechazó o llegó uno más nuevo). Actualice la lista.", 409, "LOTE_NO_PENDIENTE")
+    tabla = _datos_del_lote(id_lote)
+    auditar(request, sesion["usuario"], "confirmar_lote", {"lote": id_lote, "filas": len(tabla)}, estricto=True)
+    if not lotes.decidir(id_lote, "confirmado", sesion["usuario"]):
+        raise ErrorDeUsuario("Otra persona ya decidió sobre este lote.", 409, "LOTE_NO_PENDIENTE")
+    pipeline = pipeline_activo()
+    try:
+        cambios = publicacion().integrar(normalizar_tabla(tabla), pipeline.codigos)
+    except Exception:
+        lotes.reabrir(id_lote)
+        auditar(request, sesion["usuario"], "confirmar_lote_fallido", {"lote": id_lote})
+        raise
+    return a_json_seguro({"lote": id_lote, "cambios": cambios, **publicacion().estaciones(pipeline)})
+
+
+@admin.post("/lotes/{id_lote}/rechazar", summary="Rechazar un lote: no llega al modelo")
+def rechazar_lote(id_lote: int, request: Request, sesion: dict = Depends(exigir_administrador)):
+    _lote(id_lote)
+    auditar(request, sesion["usuario"], "rechazar_lote", {"lote": id_lote}, estricto=True)
+    if not lotes.decidir(id_lote, "rechazado", sesion["usuario"]):
+        raise ErrorDeUsuario("Este lote ya no está pendiente. Actualice la lista.", 409, "LOTE_NO_PENDIENTE")
+    return {"estado": "ok"}
+
+
+@admin.post("/consulta/ejecutar", summary="Consultar datos.gov.co ahora (lo mismo que hace el script diario)")
+def consultar_ahora(request: Request, sesion: dict = Depends(exigir_administrador)):
+    resultado = consultar_diario.ejecutar()
+    auditar(request, sesion["usuario"], "consulta_manual", {"resultado": resultado["estado"], "lote": resultado.get("lote")})
+    return a_json_seguro(resultado)
 
 
 @admin.get("/actividad", summary="Registro de auditoría: quién hizo qué")
