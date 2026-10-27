@@ -1,0 +1,61 @@
+/* ==========================================================================
+   Base: variables de diseño, reinicio y tipografía
+   ========================================================================== */
+:root {
+  /* Marca: la selva y el agua del Chocó */
+  --noche: #06182b;
+  --selva: #0c3a2b;
+  --azul: #0f4c75;
+  --agua: #22c1d6;
+  --agua-oscuro: #0d97ab;
+  --agua-suave: #e3f7fa;
+
+  /* Semáforo (colores fijos: significan algo) */
+  --verde: #2fb86a;
+  --verde-suave: #dff5e8;
+  --amarillo: #f5b82e;
+  --amarillo-suave: #fdf1cf;
+  --rojo: #e5484d;
+  --rojo-suave: #fbe0e1;
+
+  /* Neutros */
+  --texto: #1a2b3c;
+  --texto-suave: #556677;
+  --linea: #dde5ec;
+  --gris: #f2f5f8;
+  --blanco: #ffffff;
+
+  --fuente: "Mulish", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --radio: 14px;
+  --radio-grande: 24px;
+  --sombra: 0 14px 40px rgba(6, 24, 43, 0.10);
+  --ancho: 1180px;
+  --alto-barra: 84px;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: calc(var(--alto-barra) + 8px); }
+body { margin: 0; font-family: var(--fuente); color: var(--texto); background: var(--blanco); line-height: 1.6; font-size: 1.02rem; -webkit-font-smoothing: antialiased; }
+img, svg { max-width: 100%; }
+h1, h2, h3, h4 { line-height: 1.12; margin: 0 0 .5em; font-weight: 800; letter-spacing: -0.015em; }
+p { margin: 0 0 1em; }
+a { color: var(--agua-oscuro); }
+code { background: var(--gris); border: 1px solid var(--linea); border-radius: 6px; padding: .05em .4em; font-size: .88em; }
+button { font: inherit; }
+:focus-visible { outline: 3px solid var(--agua); outline-offset: 3px; border-radius: 6px; }
+
+.contenedor { width: min(100% - 2.4rem, var(--ancho)); margin-inline: auto; }
+.saltar { position: absolute; left: -999px; top: 8px; background: var(--blanco); color: var(--noche); padding: .6rem 1rem; border-radius: 8px; z-index: 100; }
+.saltar:focus { left: 8px; }
+.lista-limpia { list-style: none; margin: 0; padding: 0; }
+
+/* Rótulo de sección entre barras invertidas */
+.kicker { display: inline-block; margin: 0 0 1rem; font-size: .8rem; font-weight: 900; letter-spacing: .2em; text-transform: uppercase; color: var(--agua-oscuro); }
+.kicker::before { content: "\\ "; }
+.kicker::after { content: " \\"; }
+.kicker--claro { color: var(--agua); }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

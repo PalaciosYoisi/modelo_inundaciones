@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
+  <!-- Vista aérea de un río del Chocó serpenteando entre la selva -->
+  <defs>
+    <filter id="sombras" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.010 0.016" numOctaves="6" seed="4"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.02  0 0 0 0 0.12  0 0 0 0 0.08  3.2 0 0 0 -1.3"/>
+    </filter>
+    <filter id="copas" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.016 0.024" numOctaves="6" seed="11"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.10  0 0 0 0 0.46  0 0 0 0 0.20  3.0 0 0 0 -1.05"/>
+    </filter>
+    <filter id="luces" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.045 0.06" numOctaves="4" seed="23"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.45  0 0 0 0 0.78  0 0 0 0 0.30  3.6 0 0 0 -1.75"/>
+    </filter>
+    <filter id="bruma" x="-20%" y="-50%" width="140%" height="200%"><feGaussianBlur stdDeviation="22"/></filter>
+    <linearGradient id="orilla" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#cdbb8a"/><stop offset="1" stop-color="#a99b72"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1600" height="900" fill="#0b2c1f"/>
+  <rect width="1600" height="900" filter="url(#sombras)"/>
+  <rect width="1600" height="900" filter="url(#copas)" opacity=".95"/>
+  <rect width="1600" height="900" filter="url(#luces)" opacity=".5"/>
+
+  <!-- afluente -->
+  <path d="M1030,640 C1090,560 1110,520 1200,500 S1330,500 1380,440" fill="none" stroke="#cdbb8a" stroke-width="44" stroke-linecap="round" opacity=".5"/>
+  <path d="M1030,640 C1090,560 1110,520 1200,500 S1330,500 1380,440" fill="none" stroke="#1d7f93" stroke-width="26" stroke-linecap="round"/>
+
+  <!-- río principal: orilla de arena, agua y reflejos -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M-100,790 C170,720 250,520 470,545 S790,790 990,650 S1180,360 1390,420 S1560,300 1720,150" stroke="url(#orilla)" stroke-width="132" opacity=".6"/>
+    <path d="M-100,790 C170,720 250,520 470,545 S790,790 990,650 S1180,360 1390,420 S1560,300 1720,150" stroke="#176f86" stroke-width="92"/>
+    <path d="M-100,790 C170,720 250,520 470,545 S790,790 990,650 S1180,360 1390,420 S1560,300 1720,150" stroke="#2fb0c3" stroke-width="62" opacity=".85"/>
+    <path d="M-100,790 C170,720 250,520 470,545 S790,790 990,650 S1180,360 1390,420 S1560,300 1720,150" stroke="#b4eef5" stroke-width="9" opacity=".4" stroke-dasharray="2 26"/>
+  </g>
+
+  <!-- bruma sobre la selva -->
+  <ellipse cx="330" cy="880" rx="680" ry="80" fill="#d7f1e9" opacity=".22" filter="url(#bruma)"/>
+  <ellipse cx="1250" cy="170" rx="520" ry="60" fill="#d7f1e9" opacity=".16" filter="url(#bruma)"/>
+</svg>
