@@ -13,15 +13,40 @@ se copió la base local a la nube; lo anterior se dejó como está. La simulaci�
 La base local no necesita corregir la hora: el computador ya estaba en hora de Colombia.
 """
 import argparse
+from contextlib import contextmanager
 import json
 import sys
 from datetime import datetime, timedelta
 
-from base_datos import ErrorBaseDatos, conexion
+import pymysql
+
+from base_datos import ErrorBaseDatos, _conectar
 
 RESPALDADAS = ("lotes", "auditoria", "usuarios")
 HORAS_A_CORREGIR = (("lotes", "creado"), ("lotes", "decidido_en"), ("auditoria", "fecha"), ("usuarios", "creado"))
 CINCO_HORAS = timedelta(hours=5)
+CREADAS = []                                      # copias que va creando esta corrida: si algo falla se borran, para poder repetir
+
+
+@contextmanager
+def conexion(prefijo: str):
+    """Como la de base_datos, pero dice el error real de la base (aquí lo corre quien administra el sistema)."""
+    con = _conectar(prefijo)
+    try:
+        with con.cursor() as cursor:
+            yield cursor
+        con.commit()
+    except pymysql.err.Error as error:
+        con.rollback()
+        with con.cursor() as cursor:
+            for copia in CREADAS:
+                cursor.execute(f"DROP TABLE IF EXISTS {copia}")
+        sys.exit(f"La base respondió con un error y no se cambió nada: {error}")
+    except BaseException:
+        con.rollback()
+        raise
+    finally:
+        con.close()
 
 
 def _convertir(valor, clave, numeros: dict, corregir):
@@ -79,13 +104,16 @@ def ejecutar(prefijo: str, desde: datetime | None, aplicar: bool) -> None:
             if cursor.fetchone():
                 existentes.append(f"{tabla}_respaldo")
         if not aplicar:
-            print("\nSimulación: no se cambió nada. Para aplicar, agregue --aplicar.")
+            print("\nCopias que ya existen:", ", ".join(existentes) or "ninguna")
+            print("Simulación: no se cambió nada. Para aplicar, agregue --aplicar.")
             return
         if existentes:
             sys.exit(f"Ya existen copias ({', '.join(existentes)}). Revíselas y bórrelas si quiere repetir el proceso.")
 
         for tabla in RESPALDADAS:
-            cursor.execute(f"CREATE TABLE {tabla}_respaldo AS SELECT * FROM {tabla}")
+            cursor.execute(f"CREATE TABLE {tabla}_respaldo LIKE {tabla}")        # TiDB no admite CREATE TABLE ... AS SELECT
+            CREADAS.append(f"{tabla}_respaldo")
+            cursor.execute(f"INSERT INTO {tabla}_respaldo SELECT * FROM {tabla}")
         corregir = _corrector(desde)
         for tabla, llave, columna in (("lotes", "id", "resumen"), ("auditoria", "id", "detalle")):
             cursor.execute(f"SELECT {llave}, {columna} FROM {tabla}")

@@ -5,3 +5,6 @@
 datos/publicado/
 backend/.env
 datos/lotes/
+paquete_hora_numeracion/
+paquete_hora_numeracion.zip
+reentrenar_modelo.ipynb
