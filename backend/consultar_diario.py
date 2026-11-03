@@ -14,6 +14,7 @@ import auditoria
 import ingesta
 from base_datos import ErrorBaseDatos
 from consulta import ErrorDeConsulta, consultar
+from hora import hora_actual
 from pipeline import PipelineSemaforo, version_activa
 from publicacion import Publicacion
 
@@ -35,7 +36,7 @@ def _desde(publicado: pd.DataFrame, columna: str, codigos: list[str], ahora: dat
 
 def ejecutar(ahora: datetime | None = None) -> dict:
     """Hace la consulta completa. Devuelve {estado, mensaje, ...}: lote_pendiente, lote_con_errores, sin_cambios o error."""
-    ahora = ahora or datetime.now()
+    ahora = ahora or hora_actual()
     try:
         pipeline = PipelineSemaforo.cargar(ingesta.CARPETA_MODELOS / version_activa(ingesta.CARPETA_MODELOS))
         ctx = ingesta.contexto(pipeline, Publicacion(ingesta.DATOS_INICIALES, ingesta.PUBLICADO_ANTERIOR))

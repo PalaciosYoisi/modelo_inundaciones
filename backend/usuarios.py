@@ -12,6 +12,7 @@ import sys
 from datetime import datetime, timedelta
 
 from base_datos import conexion
+from hora import hora_actual
 
 ITERACIONES = 200_000
 DURACION_SESION = timedelta(hours=8)
@@ -49,7 +50,7 @@ def crear(usuario: str, nombre: str) -> str:
     """Crea al administrador y devuelve su clave inicial (debe cambiarla al ingresar)."""
     usuario, clave = _limpio(usuario), secrets.token_urlsafe(9)
     with conexion() as cursor:
-        cursor.execute("INSERT INTO usuarios (usuario, nombre, clave_hash, sal, creado) VALUES (%s, %s, '', '', %s)", (usuario, nombre.strip(), datetime.now()))
+        cursor.execute("INSERT INTO usuarios (usuario, nombre, clave_hash, sal, creado) VALUES (%s, %s, '', '', %s)", (usuario, nombre.strip(), hora_actual()))
         _guardar_clave(cursor, usuario, clave, True)
     return clave
 
@@ -67,7 +68,7 @@ def restablecer(usuario: str) -> str:
 
 def estado_de_todos(ahora: datetime | None = None) -> list[dict]:
     """Todos los administradores y si alguno está bloqueado, para que otro pueda desbloquearlo."""
-    ahora = ahora or datetime.now()
+    ahora = ahora or hora_actual()
     with conexion() as cursor:
         cursor.execute("SELECT usuario, nombre, debe_cambiar_clave, intentos_fallidos, bloqueado_hasta FROM usuarios ORDER BY usuario")
         filas = cursor.fetchall()
@@ -95,7 +96,7 @@ def listar() -> list[dict]:
 
 # ------------------------------------------------------------------ ingreso y sesiones
 def iniciar_sesion(usuario: str, clave: str, ahora: datetime | None = None) -> dict:
-    ahora, usuario = ahora or datetime.now(), _limpio(usuario)
+    ahora, usuario = ahora or hora_actual(), _limpio(usuario)
     error = None                                          # se lanza después de cerrar la base, para que el intento fallido quede guardado
     with conexion() as cursor:
         cursor.execute("SELECT * FROM usuarios WHERE usuario=%s", (usuario,))
@@ -124,7 +125,7 @@ def iniciar_sesion(usuario: str, clave: str, ahora: datetime | None = None) -> d
 def validar_sesion(token: str, ahora: datetime | None = None) -> dict | None:
     with conexion() as cursor:
         cursor.execute("SELECT u.usuario, u.nombre, u.debe_cambiar_clave FROM sesiones s JOIN usuarios u ON u.usuario = s.usuario "
-                       "WHERE s.token_hash=%s AND s.expira > %s", (_huella(token), ahora or datetime.now()))
+                       "WHERE s.token_hash=%s AND s.expira > %s", (_huella(token), ahora or hora_actual()))
         fila = cursor.fetchone()
     return None if fila is None else {**fila, "debe_cambiar_clave": bool(fila["debe_cambiar_clave"])}
 

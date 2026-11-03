@@ -7,6 +7,8 @@ from datetime import datetime
 
 import pandas as pd
 
+from hora import hora_actual
+
 MAX_DESCARTE_ACEPTABLE = 0.02        
 MAX_DESCARTE_GRAVE = 0.10            
 MIN_COBERTURA_NIVEL = 0.80           
@@ -34,7 +36,7 @@ def recomendar(ficha: dict, nombres: dict, ahora: datetime | None = None) -> dic
     """ficha: el lote tal como lo devuelve lotes.obtener. nombres: código de estación → nombre. None si el lote ya no espera decisión."""
     if ficha["estado"] not in ("pendiente", "con_errores"):
         return None
-    ahora = ahora or datetime.now()
+    ahora = ahora or hora_actual()
     r = ficha["resumen"]
     por_estacion = r.get("por_estacion", [])
     sin_datos = r.get("estaciones_sin_datos", [])

@@ -12,6 +12,7 @@ from pathlib import Path
 import pandas as pd
 
 from base_datos import ErrorBaseDatos, conexion
+from hora import hora_actual
 
 HORAS_A_CONSERVAR = 24 * 120
 MAX_HORAS_SIN_DATO = 48           # una lectura más vieja se considera desactualizada
@@ -41,9 +42,10 @@ class Publicacion:
     @staticmethod
     def _subir(cursor, tabla: pd.DataFrame) -> None:
         """Agrega o actualiza lecturas. Un valor vacío no borra el que ya estaba."""
-        sentencia = ("INSERT INTO lecturas (estacion, fecha_hora, nivel_m, lluvia_mm) VALUES (%s, %s, %s, %s) "
-                     "ON DUPLICATE KEY UPDATE nivel_m = COALESCE(VALUES(nivel_m), nivel_m), lluvia_mm = COALESCE(VALUES(lluvia_mm), lluvia_mm), actualizado = NOW()")
-        filas = _a_python(tabla[COLUMNAS])
+        sentencia = ("INSERT INTO lecturas (estacion, fecha_hora, nivel_m, lluvia_mm, actualizado) VALUES (%s, %s, %s, %s, %s) "
+                     "ON DUPLICATE KEY UPDATE nivel_m = COALESCE(VALUES(nivel_m), nivel_m), lluvia_mm = COALESCE(VALUES(lluvia_mm), lluvia_mm), actualizado = VALUES(actualizado)")
+        momento = hora_actual()
+        filas = [fila + (momento,) for fila in _a_python(tabla[COLUMNAS])]
         for i in range(0, len(filas), LOTE):
             cursor.executemany(sentencia, filas[i:i + LOTE])
 
@@ -100,7 +102,7 @@ class Publicacion:
 
     def estaciones(self, pipeline, ahora: datetime | None = None) -> dict:
         """Semáforo más reciente de cada estación, con los datos que necesita el mapa."""
-        ahora = ahora or datetime.now()
+        ahora = ahora or hora_actual()
         predicciones = self.predicciones(pipeline)
         ultimas = (predicciones[predicciones["nivel_m"].notna()].sort_values("fecha_hora").groupby("estacion").tail(1).set_index("estacion"))
         lista = []

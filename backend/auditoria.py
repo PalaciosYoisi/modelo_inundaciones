@@ -1,14 +1,14 @@
 """Auditoría: quién hizo qué y cuándo. Solo se agregan registros y se consultan; nunca se editan ni se borran desde la API."""
 import json
-from datetime import datetime
 
 from base_datos import conexion
+from hora import hora_actual
 
 
 def registrar(usuario: str, accion: str, detalle: dict | None = None, ip: str | None = None) -> None:
     with conexion() as cursor:
         cursor.execute("INSERT INTO auditoria (fecha, usuario, accion, detalle, ip) VALUES (%s, %s, %s, %s, %s)",
-                       (datetime.now(), (usuario or "?")[:30], accion[:40], json.dumps(detalle or {}, ensure_ascii=False, default=str), ip))
+                       (hora_actual(), (usuario or "?")[:30], accion[:40], json.dumps(detalle or {}, ensure_ascii=False, default=str), ip))
 
 
 def listar(usuario: str | None = None, accion: str | None = None, limite: int = 100) -> dict:
