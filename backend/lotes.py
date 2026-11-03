@@ -7,12 +7,12 @@ Este módulo no publica nada: confirmar un lote (pasarlo a las lecturas publicad
 import io
 import json
 import os
-from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 
 from base_datos import conexion
+from hora import hora_actual
 
 RAIZ = Path(__file__).resolve().parents[1]
 CARPETA_ANTERIOR = Path(os.environ.get("SEMAFORO_LOTES", RAIZ / "datos" / "lotes"))      # lotes guardados como archivo en versiones anteriores
@@ -22,10 +22,11 @@ ESTADOS_FINALES = ("confirmado", "rechazado")
 def crear(origen: str, estado: str, tabla: pd.DataFrame, resumen: dict, unifica: list[int] = ()) -> int:
     """Guarda un lote nuevo. Los lotes pendientes que se combinaron en él (unifica) quedan como unificados y apuntan al nuevo."""
     with conexion() as cursor:
-        cursor.execute("INSERT INTO lotes (creado, origen, estado, desde, hasta, filas, resumen, archivo, datos) VALUES (%s, %s, %s, %s, %s, %s, %s, '', %s)",
-                       (datetime.now(), origen, estado, resumen.get("desde"), resumen.get("hasta"), len(tabla), json.dumps(resumen, ensure_ascii=False, default=str),
+        cursor.execute("SELECT COALESCE(MAX(id), 0) + 1 AS siguiente FROM lotes")      # numeración corrida (Lote 1, Lote 2...), sin los saltos que hace la base en la nube
+        id_lote = cursor.fetchone()["siguiente"]
+        cursor.execute("INSERT INTO lotes (id, creado, origen, estado, desde, hasta, filas, resumen, archivo, datos) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, '', %s)",
+                       (id_lote, hora_actual(), origen, estado, resumen.get("desde"), resumen.get("hasta"), len(tabla), json.dumps(resumen, ensure_ascii=False, default=str),
                         tabla.to_csv(index=False)))
-        id_lote = cursor.lastrowid
         for anterior in unifica:
             cursor.execute("SELECT resumen FROM lotes WHERE id=%s", (anterior,))
             ficha = json.loads(cursor.fetchone()["resumen"] or "{}")
@@ -124,5 +125,5 @@ def decidir(id_lote: int, estado: str, usuario: str) -> bool:
     if estado not in ESTADOS_FINALES:
         raise ValueError(estado)
     with conexion() as cursor:
-        cursor.execute("UPDATE lotes SET estado=%s, decidido_por=%s, decidido_en=%s WHERE id=%s AND estado='pendiente'", (estado, usuario, datetime.now(), id_lote))
+        cursor.execute("UPDATE lotes SET estado=%s, decidido_por=%s, decidido_en=%s WHERE id=%s AND estado='pendiente'", (estado, usuario, hora_actual(), id_lote))
         return cursor.rowcount == 1
