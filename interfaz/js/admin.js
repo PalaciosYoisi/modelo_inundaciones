@@ -5,6 +5,7 @@ import { iniciarCarga } from "./cargar_archivos.js";
 import { iniciarConsulta } from "./datos_nuevos.js";
 import { iniciarDescargas } from "./descargas.js";
 import { iniciarModelo } from "./modelo.js";
+import { iniciarReportes } from "./reportes.js";
 
 const $ = (id) => document.getElementById(id);
 let yo = null;
@@ -14,6 +15,7 @@ const carga = iniciarCarga({
   alRevisar: (id) => { irAVista("consulta"); consulta.abrir(id); },
 });
 const descargas = iniciarDescargas({ alVencer: () => { api.sesion.cerrar(); mostrarPanel(false); } });
+const reportes = iniciarReportes({ alVencer: () => { api.sesion.cerrar(); mostrarPanel(false); } });
 const modelo = iniciarModelo({ alVencer: () => { api.sesion.cerrar(); mostrarPanel(false); }, alCambiar: () => cargarResumen() });
 const consulta = iniciarConsulta({
   alVencer: () => { api.sesion.cerrar(); mostrarPanel(false); },
@@ -93,7 +95,7 @@ if (api.sesion.token()) {                         // si la pestaña ya tenía un
 }
 
 // ------------------------------------------------------------------ Menú lateral
-const TITULOS = { resumen: "Resumen", consulta: "Datos nuevos", datos: "Cargar archivos", modelo: "Actualizar el modelo", descargas: "Descargas", actividad: "Actividad", equipo: "Administradores" };
+const TITULOS = { resumen: "Resumen", consulta: "Datos nuevos", datos: "Cargar archivos", modelo: "Actualizar el modelo", reportes: "Reportes y descargas", actividad: "Actividad", equipo: "Administradores" };
 
 function irAVista(vista) {
   for (const enlace of document.querySelectorAll("[data-vista]")) {
@@ -106,7 +108,7 @@ function irAVista(vista) {
   if (vista === "resumen") { cargarResumen(); consulta.actualizarAviso(); }
   if (vista === "consulta") consulta.cargar();
   if (vista === "modelo") modelo.cargar();
-  if (vista === "descargas") descargas.cargar();
+  if (vista === "reportes") { reportes.cargar(); descargas.cargar(); }
   if (vista === "actividad") cargarActividad();
   if (vista === "equipo") cargarEquipo();
 }
@@ -163,7 +165,7 @@ const ACCIONES = {
   descargar_predicciones: "Descargó predicciones", publicar: "Publicó datos", publicar_rechazado: "Intentó publicar un archivo con errores",
   revisar_archivos: "Revisó archivos de datos", subir_archivos: "Subió archivos para crear un lote", subir_archivos_resultado: "Unificó los archivos en un lote",
   desbloquear: "Desbloqueó a un administrador", descargar_datos: "Descargó los datos publicados", consulta_manual: "Consultó datos.gov.co", consulta_diaria: "Consulta diaria automática",
-  restablecer_clave: "Restableció la clave de un administrador", descargar_lote: "Descargó un lote", descargar_marcas: "Descargó las lecturas marcadas de un lote", confirmar_lote: "Confirmó un lote", confirmar_lote_fallido: "Confirmó un lote, pero falló la publicación", rechazar_lote: "Rechazó un lote",
+  restablecer_clave: "Restableció la clave de un administrador", descargar_lote: "Descargó un lote", descargar_marcas: "Descargó las lecturas marcadas de un lote", descargar_reporte: "Descargó un reporte", confirmar_lote: "Confirmó un lote", confirmar_lote_fallido: "Confirmó un lote, pero falló la publicación", rechazar_lote: "Rechazó un lote",
   actualizar_modelo: "Inició la actualización del modelo", activar_version: "Puso en uso una versión del modelo", descartar_version: "Descartó una versión del modelo",
 };
 const GRUPOS = {
@@ -172,7 +174,7 @@ const GRUPOS = {
 };
 const cuentaDe = (r) => {
   const d = r.detalle ?? {};
-  return [d.archivo && `Archivo: ${d.archivo}`, d.archivos && `Archivos: ${d.archivos.join(", ")}`, d.filas !== undefined && `${numero(d.filas)} filas`, d.errores && `${d.errores} errores`, d.motivo && `Motivo: ${d.motivo}`, d.usuario && `Persona: ${d.usuario}`, d.lote && `Lote ${d.lote}`, d.lecturas && `Lecturas marcadas: ${Object.entries(d.lecturas).map(([m, v]) => `${numero(v.lecturas)} ${GRUPOS[m] ?? m} (${v.decision})`).join(", ")}`, d.version && `Versión ${d.version}`, d.estacion && `Estación: ${d.estacion}`, d.dias && `Periodo: ${d.dias === "todos" ? "todo" : `${d.dias} días`}`, d.resultado && `Resultado: ${d.resultado}`].filter(Boolean).join(" · ");
+  return [d.archivo && `Archivo: ${d.archivo}`, d.archivos && `Archivos: ${d.archivos.join(", ")}`, d.filas !== undefined && `${numero(d.filas)} filas`, d.errores && `${d.errores} errores`, d.motivo && `Motivo: ${d.motivo}`, d.usuario && `Persona: ${d.usuario}`, d.lote && `Lote ${d.lote}`, d.lecturas && `Lecturas marcadas: ${Object.entries(d.lecturas).map(([m, v]) => `${numero(v.lecturas)} ${GRUPOS[m] ?? m} (${v.decision})`).join(", ")}`, d.version && `Versión ${d.version}`, d.tipo && `Reporte de ${d.tipo}`, d.estacion && `Estación: ${d.estacion}`, d.dias && `Periodo: ${d.dias === "todos" ? "todo" : `${d.dias} días`}`, d.resultado && `Resultado: ${d.resultado}`].filter(Boolean).join(" · ");
 };
 
 async function cargarActividad() {
