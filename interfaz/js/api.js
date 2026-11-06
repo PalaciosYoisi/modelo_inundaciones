@@ -84,4 +84,7 @@ export const subirArchivos = async (archivos, crear) => {
   archivos.forEach((a) => formulario.append("archivos", a, a.name));
   return (await pedir(`/admin/archivos?crear=${crear}`, { method: "POST", body: formulario, conSesion: true })).json();
 };
+export const reporte = async (tipo, archivo) => (await pedir(`/admin/reportes/${tipo}`, conArchivo(archivo))).blob();
+export const reporteDeDatos = async (tipo, fuente, lote, formato = "html") => (await pedir(`/admin/reportes/${tipo}?fuente=${fuente}${fuente === "lote" ? `&lote=${lote}` : ""}&formato=${formato}`, { conSesion: true })).blob();
+export const reporteDeActualizacion = async (anterior, candidata) => (await pedir(`/admin/reportes/actualizacion?anterior=${encodeURIComponent(anterior)}&candidata=${encodeURIComponent(candidata)}`, { conSesion: true })).blob();
 export const analizar = async (archivo) => (await pedir("/admin/analizar?incluir_figuras=true", conArchivo(archivo))).json();

@@ -214,4 +214,12 @@ body.adm { background: #eaf0f5; }
 .recomendacion--casi { --c: #d99a0b; --s: var(--amarillo-suave); }
 .recomendacion--esperar { --c: var(--azul); --s: var(--agua-suave); }
 .recomendacion--mantener { --c: var(--azul); --s: var(--agua-suave); }
+.rep-opciones { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 1rem; margin-top: 1.4rem; }
+.reporte-opcion { display: grid; gap: .5rem; align-content: start; padding: 1.2rem; border: 2px solid var(--linea); border-radius: var(--radio); background: var(--blanco); }
+.reporte-opcion h3 { margin: .2rem 0 0; }
+.reporte-opcion p { margin: 0 0 .6rem; color: var(--texto-suave, inherit); }
+.reporte-opcion .boton { justify-self: start; }
+.rep-cabecera { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .8rem 1rem; margin-bottom: 1rem; }
+.rep-cabecera h2 { margin: 0; min-width: 0; word-break: break-word; }
+.rep-marco { display: block; width: 100%; min-height: 24rem; border: 2px solid var(--linea); border-radius: var(--radio); background: #fff; }
 @media (max-width: 480px) { .superior { gap: .6rem; } .superior h1 { font-size: 1.15rem; min-width: 0; } .superior .boton { padding: .55rem 1rem; font-size: .88rem; } }
