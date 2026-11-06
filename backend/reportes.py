@@ -222,3 +222,44 @@ def reporte_compatibilidad(diagnostico: dict, archivo: str, version_modelo: str)
                           "Reglas del problema: rangos posibles, por ejemplo, un nivel de río no puede ser cero ni salirse de lo que cada estación ha registrado."]))
     cuerpo.append('<div class="nota">El sistema no corrige ni modifica los datos para forzar una predicción. Si hay errores, se debe corregir el archivo y volver a revisarlo.</div>')
     return _pagina("Reporte de compatibilidad", f"{archivo} · modelo versión {version_modelo}", "".join(cuerpo))
+
+
+# ==============================================================================
+# Reporte de EDA (análisis exploratorio)
+# ==============================================================================
+
+def reporte_eda(resultado: dict, figuras: list, archivo: str) -> str:
+    """Resumen del dataset, calidad de los datos, estadísticas, gráficas y observaciones objetivas. resultado y figuras: lo que devuelve eda.analizar."""
+    r = resultado["resumen"]
+    cuerpo = [
+        _datos([(_num(r["filas"]), "filas"), (_num(r["columnas"]), "columnas"), (_num(r["filas_duplicadas"]), "filas duplicadas"),
+                (f"{_num(r['porcentaje_celdas_faltantes'], 1)} %", "celdas vacías")]),
+        "<h2>Observaciones del sistema</h2>", _lista(resultado["observaciones"]),
+        "<h2>Variables y calidad de los datos</h2>",
+        _tabla(["Variable", "Tipo detectado", "Con dato", "Faltantes", "Valores distintos"],
+               [[v["nombre"], v["tipo"], _num(v["datos"]), f"{_num(v['faltantes'])} ({_num(v['porcentaje_faltantes'], 1)} %)", _num(v["valores_unicos"])] for v in resultado["variables"]],
+               numericas=(2, 3, 4)),
+    ]
+    if r.get("usa_muestra_para_graficas"):
+        cuerpo.append('<div class="nota">El archivo es muy grande: las gráficas y las correlaciones se calcularon con una muestra.</div>')
+    if resultado["numericas"]:
+        cuerpo += ["<h2>Variables numéricas</h2>",
+                   _tabla(["Variable", "Media", "Desv.", "Mínimo", "Mediana", "Máximo", "Atípicos"],
+                          [[e["nombre"], _num(e["media"], 2), _num(e["desviacion"], 2), _num(e["minimo"], 2), _num(e["mediana"], 2), _num(e["maximo"], 2),
+                            f"{_num(e['atipicos']['cantidad'])} ({_num(e['atipicos']['porcentaje'], 1)} %)"] for e in resultado["numericas"]], numericas=(1, 2, 3, 4, 5, 6)),
+                   f'<div class="nota">Atípicos según el criterio {_e(resultado["numericas"][0]["atipicos"]["criterio"])}. Un valor atípico no es necesariamente un error.</div>']
+    for c in resultado["categoricas"]:
+        cuerpo += [f"<h2>{_e(c['nombre'])} ({_num(c['unicos'])} categorías)</h2>",
+                   _tabla(["Valor", "Registros", "Proporción"], [[f["valor"], _num(f["cantidad"]), _pct(f["proporcion"], 1)] for f in c["mas_frecuentes"]], numericas=(1, 2))]
+    if resultado["temporales"]:
+        cuerpo += ["<h2>Fechas y horas</h2>",
+                   _tabla(["Variable", "Desde", "Hasta", "Días cubiertos", "Interrupciones"],
+                          [[t["nombre"], _fecha(t["desde"]), _fecha(t["hasta"]), _num(t["dias_cubiertos"], 1), _num(t["huecos"])] for t in resultado["temporales"]], numericas=(3, 4))]
+    pares = resultado["relaciones"]["pares"]
+    if pares:
+        cuerpo += ["<h2>Relaciones entre variables</h2>", f'<div class="nota">{_e(resultado["relaciones"]["criterio"])}. {_e(resultado["relaciones"]["aviso"])}</div>',
+                   _tabla(["Variable A", "Variable B", "Spearman"], [[p["a"], p["b"], _num(p["rho"], 2)] for p in pares], numericas=(2,))]
+    if figuras:
+        cuerpo += ["<h2>Gráficas</h2>", '<div class="figuras">' + "".join(
+            f'<figure><img alt="{_e(f["titulo"])}" src="data:image/png;base64,{f["imagen_base64"]}"><figcaption>{_e(f["titulo"])}</figcaption></figure>' for f in figuras) + "</div>"]
+    return _pagina("Reporte de análisis de los datos", archivo, "".join(cuerpo))
