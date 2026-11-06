@@ -2,8 +2,9 @@
 import * as api from "./api.js";
 import { fecha, guardarArchivo, h, hace, icono, numero, reemplazar } from "./dom.js";
 import { iniciarCarga } from "./cargar_archivos.js";
-import { iniciarConsulta } from "./consulta_diaria.js";
+import { iniciarConsulta } from "./datos_nuevos.js";
 import { iniciarDescargas } from "./descargas.js";
+import { iniciarModelo } from "./modelo.js";
 
 const $ = (id) => document.getElementById(id);
 let yo = null;
@@ -13,6 +14,7 @@ const carga = iniciarCarga({
   alRevisar: (id) => { irAVista("consulta"); consulta.abrir(id); },
 });
 const descargas = iniciarDescargas({ alVencer: () => { api.sesion.cerrar(); mostrarPanel(false); } });
+const modelo = iniciarModelo({ alVencer: () => { api.sesion.cerrar(); mostrarPanel(false); }, alCambiar: () => cargarResumen() });
 const consulta = iniciarConsulta({
   alVencer: () => { api.sesion.cerrar(); mostrarPanel(false); },
   alCambiar: () => cargarResumen(),
@@ -77,6 +79,7 @@ $("form-clave").addEventListener("submit", async (evento) => {
 });
 
 function cerrarSesion() {
+  borrarAvisoDelEquipo();
   api.salir().catch(() => {});                    // si no se puede avisar al servidor, igual se cierra aquí
   api.sesion.cerrar();
   yo = null;
@@ -90,7 +93,7 @@ if (api.sesion.token()) {                         // si la pestaña ya tenía un
 }
 
 // ------------------------------------------------------------------ Menú lateral
-const TITULOS = { resumen: "Resumen", consulta: "Consulta diaria", datos: "Cargar archivos", descargas: "Descargas", actividad: "Actividad", equipo: "Administradores" };
+const TITULOS = { resumen: "Resumen", consulta: "Datos nuevos", datos: "Cargar archivos", modelo: "Actualizar el modelo", descargas: "Descargas", actividad: "Actividad", equipo: "Administradores" };
 
 function irAVista(vista) {
   for (const enlace of document.querySelectorAll("[data-vista]")) {
@@ -99,13 +102,16 @@ function irAVista(vista) {
   for (const nombre of Object.keys(TITULOS)) mostrar($(`vista-${nombre}`), nombre === vista);
   $("titulo-vista").textContent = TITULOS[vista];
   $("lateral").classList.remove("lateral--abierto");
+  if (vista !== "equipo") borrarAvisoDelEquipo();
   if (vista === "resumen") { cargarResumen(); consulta.actualizarAviso(); }
   if (vista === "consulta") consulta.cargar();
+  if (vista === "modelo") modelo.cargar();
   if (vista === "descargas") descargas.cargar();
   if (vista === "actividad") cargarActividad();
   if (vista === "equipo") cargarEquipo();
 }
 document.querySelectorAll("[data-vista]").forEach((e) => e.addEventListener("click", () => irAVista(e.dataset.vista)));
+$("ir-a-modelo").addEventListener("click", () => irAVista("modelo"));
 $("abrir-menu").addEventListener("click", () => $("lateral").classList.toggle("lateral--abierto"));
 // ------------------------------------------------------------------ Resumen
 const COLOR = { Verde: "verde", Amarillo: "amarillo", Rojo: "rojo" };
@@ -116,7 +122,12 @@ function indicador(nombre, valor, detalle, color) {
     h("div", {}, h("b", {}, valor), h("span", {}, detalle)));
 }
 
+async function avisoDelModelo() {                 // si la consulta falla, simplemente no se muestra el aviso
+  try { $("aviso-modelo").hidden = (await api.sugerenciaDeActualizacion()).accion !== "actualizar"; } catch { $("aviso-modelo").hidden = true; }
+}
+
 async function cargarResumen() {
+  avisoDelModelo();
   try {
     const d = await api.estaciones();
     const conSemaforo = d.estaciones.filter((e) => e.semaforo && !e.desactualizada);
@@ -152,11 +163,16 @@ const ACCIONES = {
   descargar_predicciones: "Descargó predicciones", publicar: "Publicó datos", publicar_rechazado: "Intentó publicar un archivo con errores",
   revisar_archivos: "Revisó archivos de datos", subir_archivos: "Subió archivos para crear un lote", subir_archivos_resultado: "Unificó los archivos en un lote",
   desbloquear: "Desbloqueó a un administrador", descargar_datos: "Descargó los datos publicados", consulta_manual: "Consultó datos.gov.co", consulta_diaria: "Consulta diaria automática",
-  descargar_lote: "Descargó un lote", confirmar_lote: "Confirmó un lote", confirmar_lote_fallido: "Confirmó un lote, pero falló la publicación", rechazar_lote: "Rechazó un lote",
+  restablecer_clave: "Restableció la clave de un administrador", descargar_lote: "Descargó un lote", descargar_marcas: "Descargó las lecturas marcadas de un lote", confirmar_lote: "Confirmó un lote", confirmar_lote_fallido: "Confirmó un lote, pero falló la publicación", rechazar_lote: "Rechazó un lote",
+  actualizar_modelo: "Inició la actualización del modelo", activar_version: "Puso en uso una versión del modelo", descartar_version: "Descartó una versión del modelo",
+};
+const GRUPOS = {
+  nivel_cero_o_negativo: "niveles en cero o negativos", nivel_fuera_de_rango: "niveles fuera de rango", lluvia_negativa: "lluvia negativa",
+  lluvia_dias_de_mas_de_500_mm: "lluvia de días de más de 500 mm", picos_de_una_hora: "picos de una hora",
 };
 const cuentaDe = (r) => {
   const d = r.detalle ?? {};
-  return [d.archivo && `Archivo: ${d.archivo}`, d.archivos && `Archivos: ${d.archivos.join(", ")}`, d.filas !== undefined && `${numero(d.filas)} filas`, d.errores && `${d.errores} errores`, d.motivo && `Motivo: ${d.motivo}`, d.usuario && `Persona: ${d.usuario}`, d.lote && `Lote ${d.lote}`, d.estacion && `Estación: ${d.estacion}`, d.dias && `Periodo: ${d.dias === "todos" ? "todo" : `${d.dias} días`}`, d.resultado && `Resultado: ${d.resultado}`].filter(Boolean).join(" · ");
+  return [d.archivo && `Archivo: ${d.archivo}`, d.archivos && `Archivos: ${d.archivos.join(", ")}`, d.filas !== undefined && `${numero(d.filas)} filas`, d.errores && `${d.errores} errores`, d.motivo && `Motivo: ${d.motivo}`, d.usuario && `Persona: ${d.usuario}`, d.lote && `Lote ${d.lote}`, d.lecturas && `Lecturas marcadas: ${Object.entries(d.lecturas).map(([m, v]) => `${numero(v.lecturas)} ${GRUPOS[m] ?? m} (${v.decision})`).join(", ")}`, d.version && `Versión ${d.version}`, d.estacion && `Estación: ${d.estacion}`, d.dias && `Periodo: ${d.dias === "todos" ? "todo" : `${d.dias} días`}`, d.resultado && `Resultado: ${d.resultado}`].filter(Boolean).join(" · ");
 };
 
 async function cargarActividad() {
@@ -182,16 +198,67 @@ async function cargarActividad() {
 }
 $("filtro-usuario").addEventListener("change", cargarActividad);
 $("filtro-accion").addEventListener("change", cargarActividad);
-// ------------------------------------------------------------------ Administradores (desbloquear)
+// ------------------------------------------------------------------ Administradores (desbloquear y restablecer la clave)
+let restableciendo = null;                         // a quién se le va a restablecer la clave, mientras se espera el sí
+
+function borrarAvisoDelEquipo() {                  // la clave temporal solo se ve mientras se está en esta pantalla
+  restableciendo = null;
+  $("equipo-aviso").hidden = true;
+  reemplazar($("equipo-aviso"));
+}
+
+function avisoDelEquipo(tipo, ...contenido) {
+  const caja = $("equipo-aviso");
+  caja.className = `aviso aviso--${tipo}`;
+  reemplazar(caja, ...contenido);
+  caja.hidden = false;
+}
+
+async function copiar(texto, boton) {
+  try {
+    await navigator.clipboard.writeText(texto);
+    boton.textContent = "Copiada";
+  } catch {
+    boton.textContent = "Selecciónela y cópiela";   // algunos navegadores no dejan copiar desde aquí
+  }
+}
+
+async function restablecer(usuario) {
+  restableciendo = null;
+  try {
+    const r = await api.restablecerClave(usuario);
+    const boton = h("button", { clase: "boton boton--contorno-oscuro boton--pequeno", type: "button", onclick: () => copiar(r.clave_temporal, boton) }, "Copiar la clave");
+    avisoDelEquipo("info", h("div", {},
+      h("p", { style: "margin:0 0 .3rem" }, `Clave temporal de ${r.nombre}:`),
+      h("p", { style: "margin:0 0 .6rem;font-size:1.5rem;font-weight:900;letter-spacing:.04em;user-select:all" }, r.clave_temporal),
+      h("p", { style: "margin:0 0 .8rem" }, "Entréguesela en persona o por un medio privado. Solo se muestra ahora. Al ingresar con ella, tendrá que elegir una clave nueva; si tenía una sesión abierta, se cerró."),
+      boton));
+  } catch (error) {
+    if (error.estado === 401) { api.sesion.cerrar(); mostrarPanel(false); return; }
+    avisoDelEquipo("error", icono("aviso"), h("p", { style: "margin:0" }, error.message));
+  }
+  cargarEquipo();
+}
+
 async function cargarEquipo() {
   try {
     const lista = await api.administradores();
+    const boton = (texto, accion, principal = false) => h("button", { clase: `boton ${principal ? "boton--primario" : "boton--contorno-oscuro"} boton--pequeno`, type: "button", onclick: accion }, texto);
+    const accionesDe = (a) => {
+      if (a.usuario === yo?.usuario) return h("small", {}, "Es usted");
+      if (restableciendo === a.usuario) {
+        return h("div", { clase: "acciones-fila" }, h("small", {}, "¿Restablecer su clave? Si tiene una sesión abierta, se cerrará."),
+          boton("Sí, restablecer", () => restablecer(a.usuario), true), boton("Cancelar", () => { restableciendo = null; cargarEquipo(); }));
+      }
+      return h("div", { clase: "acciones-fila" }, a.bloqueado ? boton("Desbloquear", () => desbloquear(a.usuario)) : null,
+        boton("Restablecer clave", () => { restableciendo = a.usuario; cargarEquipo(); }));
+    };
     const estado = (a) => (a.bloqueado ? h("span", { clase: "etiqueta etiqueta--rojo" }, `Bloqueado hasta las ${new Date(a.bloqueado_hasta.replace(" ", "T")).toLocaleTimeString("es-CO", { hour: "numeric", minute: "2-digit" })}`)
       : a.debe_cambiar_clave ? h("span", { clase: "etiqueta etiqueta--amarillo" }, "Debe cambiar su clave") : h("span", { clase: "etiqueta etiqueta--verde" }, "Activo"));
     reemplazar($("tabla-equipo"), h("div", { clase: "tabla" }, h("table", {},
       h("thead", {}, h("tr", {}, ["Usuario", "Nombre", "Estado", ""].map((x) => h("th", {}, x)))),
       h("tbody", {}, lista.map((a) => h("tr", {}, h("td", {}, h("b", {}, a.usuario)), h("td", {}, a.nombre), h("td", {}, estado(a)),
-        h("td", {}, a.bloqueado ? h("button", { clase: "boton boton--contorno-oscuro boton--pequeno", type: "button", onclick: () => desbloquear(a.usuario) }, "Desbloquear") : null)))))));
+        h("td", {}, accionesDe(a))))))));
   } catch (error) {
     if (error.estado === 401) { api.sesion.cerrar(); mostrarPanel(false); }
     reemplazar($("tabla-equipo"), h("p", { clase: "vacio" }, error.message));

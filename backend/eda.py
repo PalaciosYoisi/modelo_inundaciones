@@ -22,7 +22,6 @@ matplotlib.use("Agg")
 
 AZUL = "#0B3C5D"
 CELESTE = "#328CC1"
-COLORES = ["#0B3C5D", "#328CC1", "#E67E22", "#27AE60", "#8E44AD", "#C0392B"]
 
 
 def _a_base64(figura) -> str:
@@ -59,17 +58,6 @@ def barras(frecuencias: pd.Series, nombre: str) -> str:
     return _a_base64(figura)
 
 
-def boxplot_por_grupo(tabla: pd.DataFrame, numerica: str, categoria: str) -> str:
-    grupos = [(str(g)[:14], v[numerica].dropna().values) for g, v in tabla.groupby(categoria) if v[numerica].notna().any()]
-    figura, ax = plt.subplots(figsize=(5.8, 3.6))
-    ax.boxplot([v for _, v in grupos], labels=[g for g, _ in grupos], patch_artist=True,
-               boxprops={"facecolor": "#A9D6E5"}, medianprops={"color": AZUL})
-    ax.set_title(f"{numerica} según {categoria}", fontweight="bold", fontsize=10)
-    ax.tick_params(axis="x", labelrotation=30, labelsize=8)
-    _estilo(ax)
-    return _a_base64(figura)
-
-
 def mapa_correlaciones(correlacion: pd.DataFrame) -> str:
     n = len(correlacion)
     figura, ax = plt.subplots(figsize=(min(9, 1.0 + 0.7 * n), min(7, 0.8 + 0.6 * n)))
@@ -84,32 +72,6 @@ def mapa_correlaciones(correlacion: pd.DataFrame) -> str:
                 ax.text(j, i, f"{correlacion.values[i, j]:.2f}", ha="center", va="center", fontsize=7)
     figura.colorbar(imagen, ax=ax, fraction=0.046)
     ax.set_title("Correlación de Spearman", fontweight="bold", fontsize=10)
-    return _a_base64(figura)
-
-
-def dispersion(x: pd.Series, y: pd.Series, nombre_x: str, nombre_y: str) -> str:
-    figura, ax = plt.subplots(figsize=(5.4, 3.8))
-    ax.scatter(x, y, s=6, alpha=0.35, color=CELESTE)
-    ax.set_xlabel(nombre_x)
-    ax.set_ylabel(nombre_y)
-    ax.set_title(f"{nombre_y} frente a {nombre_x}", fontweight="bold", fontsize=10)
-    _estilo(ax)
-    return _a_base64(figura)
-
-
-def serie_de_tiempo(tabla: pd.DataFrame, tiempo: str, numerica: str, grupo: str | None) -> str:
-    figura, ax = plt.subplots(figsize=(7.6, 3.4))
-    if grupo:
-        for i, (g, datos) in enumerate(tabla.groupby(grupo)):
-            diario = datos.set_index(tiempo)[numerica].resample("D").mean()
-            ax.plot(diario.index, diario.values, linewidth=1.1, color=COLORES[i % len(COLORES)], label=str(g)[:16])
-        ax.legend(fontsize=7, ncol=2)
-    else:
-        diario = tabla.set_index(tiempo)[numerica].resample("D").mean()
-        ax.plot(diario.index, diario.values, linewidth=1.2, color=AZUL)
-    ax.set_title(f"{numerica} en el tiempo (promedio diario)", fontweight="bold", fontsize=10)
-    ax.tick_params(axis="x", labelrotation=25, labelsize=8)
-    _estilo(ax)
     return _a_base64(figura)
 
 
@@ -239,8 +201,8 @@ def _observaciones(resumen, variables, numericas, temporales, relaciones) -> lis
 
 
 # ---------------------------------------------------------------- punto de entrada
-def analizar(tabla: pd.DataFrame, nombre_archivo: str = "") -> tuple[dict, list]:
-    """Devuelve (resultado, figuras). Las figuras son una lista de {id, titulo, imagen_base64}."""
+def analizar(tabla: pd.DataFrame, nombre_archivo: str = "", con_figuras: bool = True) -> tuple[dict, list]:
+    """Devuelve (resultado, figuras). Las figuras son una lista de {id, titulo, imagen_base64}; con_figuras=False no las genera."""
     filas, columnas = tabla.shape
     duplicadas = int(tabla.duplicated().sum())
     muestreado = filas > MAX_MUESTRA
@@ -277,34 +239,14 @@ def analizar(tabla: pd.DataFrame, nombre_archivo: str = "") -> tuple[dict, list]
 
     # Gráficas: solo las que corresponden a los tipos encontrados
     figuras = []
-    for n in nombres_num[:MAX_GRAFICAS_POR_TIPO + 1]:
+    for n in (nombres_num[:MAX_GRAFICAS_POR_TIPO + 1] if con_figuras else []):
         figuras.append({"id": f"hist-{n}", "titulo": f"Distribución de {n}", "imagen_base64": histograma(numericas_muestra[n], n)})
-    for n in nombres_cat[:MAX_GRAFICAS_POR_TIPO]:
+    for n in (nombres_cat[:MAX_GRAFICAS_POR_TIPO] if con_figuras else []):
         cuenta = convertidas[n].astype(str).str.strip().value_counts().head(10)
         figuras.append({"id": f"barras-{n}", "titulo": f"Frecuencia de {n}", "imagen_base64": barras(cuenta, n)})
-    if categoria_principal is not None and nombres_num:
-        for n in nombres_num[:3]:
-            datos = pd.DataFrame({n: numericas_muestra[n], categoria_principal.name: categoria_principal.loc[muestra.index]})
-            figuras.append({"id": f"box-{n}", "titulo": f"{n} según {categoria_principal.name}", "imagen_base64": boxplot_por_grupo(datos, n, categoria_principal.name)})
-    if len(nombres_num) >= 3:
+    if con_figuras and len(nombres_num) >= 3:
         figuras.append({"id": "correlaciones", "titulo": "Correlación entre variables numéricas",
                         "imagen_base64": mapa_correlaciones(numericas_muestra.corr(method="spearman"))})
-    if relaciones["pares"]:
-        par = relaciones["pares"][0]
-        figuras.append({"id": "dispersion", "titulo": f"{par['b']} frente a {par['a']}",
-                        "imagen_base64": dispersion(numericas_muestra[par["a"]], numericas_muestra[par["b"]], par["a"], par["b"])})
-    if nombres_tiempo and nombres_num:
-        tiempo = nombres_tiempo[0]
-        base = pd.DataFrame({tiempo: convertidas[tiempo]})
-        for n in nombres_num[:2]:
-            base[n] = numericas[n]
-        if categoria_principal is not None and categoria_principal.nunique() <= 6:
-            base[categoria_principal.name] = categoria_principal
-        base = base.dropna(subset=[tiempo])
-        for n in nombres_num[:2]:
-            figuras.append({"id": f"tiempo-{n}", "titulo": f"{n} en el tiempo",
-                            "imagen_base64": serie_de_tiempo(base.dropna(subset=[n]), tiempo, n,
-                                                                       categoria_principal.name if categoria_principal is not None and categoria_principal.nunique() <= 6 else None)})
 
     resultado = {"archivo": nombre_archivo, "resumen": resumen, "variables": variables, "numericas": estadisticas,
                  "categoricas": frecuencias, "temporales": temporales, "relaciones": relaciones}

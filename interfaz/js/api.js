@@ -59,11 +59,22 @@ export const descargarDatos = async (estacion, dias) => {
 export const lotes = async () => (await pedir("/admin/lotes", { conSesion: true })).json();
 export const lote = async (id) => (await pedir(`/admin/lotes/${id}`, { conSesion: true })).json();
 export const descargarLote = async (id) => (await pedir(`/admin/lotes/${id}/descargar`, { conSesion: true })).blob();
-export const confirmarLote = async (id) => (await pedir(`/admin/lotes/${id}/confirmar`, { method: "POST", conSesion: true })).json();
+export const confirmarLote = async (id, conservar = []) => (await pedir(`/admin/lotes/${id}/confirmar`, { ...json({ conservar }), conSesion: true })).json();
+export const marcasDelLote = async (id, motivo) => (await pedir(`/admin/lotes/${id}/marcas?motivo=${encodeURIComponent(motivo)}`, { conSesion: true })).json();
+export const horasDelLote = async (id, estacion, pagina) => (await pedir(`/admin/lotes/${id}/horas?estacion=${encodeURIComponent(estacion)}&pagina=${pagina}`, { conSesion: true })).json();
+export const descargarMarcas = async (id) => (await pedir(`/admin/lotes/${id}/marcas.csv`, { conSesion: true })).blob();
 export const rechazarLote = async (id, motivo) => (await pedir(`/admin/lotes/${id}/rechazar`, { ...json({ motivo }), conSesion: true })).json();
 export const consultarAhora = async () => (await pedir("/admin/consulta/ejecutar", { method: "POST", conSesion: true })).json();
+export const versionesDelModelo = async () => (await pedir("/admin/modelo/versiones", { conSesion: true })).json();
+export const actualizarModelo = async (forzar = false) => (await pedir(`/admin/modelo/actualizar?forzar=${forzar}`, { method: "POST", conSesion: true })).json();
+export const sugerenciaDeActualizacion = async (medir = false) => (await pedir(`/admin/modelo/sugerencia?medir=${medir}`, { conSesion: true })).json();
+export const avanceDeActualizacion = async () => (await pedir("/admin/modelo/actualizacion", { conSesion: true })).json();
+export const versionDelModelo = async (version) => (await pedir(`/admin/modelo/versiones/${encodeURIComponent(version)}`, { conSesion: true })).json();
+export const activarVersion = async (version, justificacion) => (await pedir(`/admin/modelo/versiones/${encodeURIComponent(version)}/activar`, { ...json({ justificacion }), conSesion: true })).json();
+export const descartarVersion = async (version, justificacion) => (await pedir(`/admin/modelo/versiones/${encodeURIComponent(version)}/descartar`, { ...json({ justificacion }), conSesion: true })).json();
 export const administradores = async () => (await pedir("/admin/administradores", { conSesion: true })).json();
 export const desbloquear = async (usuario) => (await pedir(`/admin/administradores/${encodeURIComponent(usuario)}/desbloquear`, { method: "POST", conSesion: true })).json();
+export const restablecerClave = async (usuario) => (await pedir(`/admin/administradores/${encodeURIComponent(usuario)}/restablecer`, { method: "POST", conSesion: true })).json();
 export const actividad = async (usuario, accion) => {
   const filtros = new URLSearchParams({ ...(usuario && { usuario }), ...(accion && { accion }) });
   return (await pedir(`/admin/actividad?${filtros}`, { conSesion: true })).json();

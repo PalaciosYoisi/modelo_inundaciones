@@ -31,6 +31,9 @@ REGLAS = ["Regla: nivel de hoy", "Regla: máximo de 24 h"]
 BOSQUE = "Bosque aleatorio"
 METRICAS = ["Color acertado", "Rojos detectados", "Alertas rojas correctas", "F1 del rojo", "Rojos no detectados", "Falsas alarmas"]
 Avance = Callable[[str, float], None]         # recibe la etapa en curso y qué parte va hecha (de 0 a 1)
+ETAPA_ACTUAL = "revisión del modelo actual con los datos nuevos"
+ETAPA_VALIDACION = "validación por bloques de tiempo"
+ETAPA_ENTRENAMIENTO = "entrenamiento con todos los datos"
 
 
 class ErrorDeReentrenamiento(Exception):
@@ -134,7 +137,7 @@ def validar_por_bloques(datos: pd.DataFrame, metadatos: dict, avance: Avance | N
     cortes.append(datos["fecha_hora"].max() + pd.Timedelta(hours=1))
     evaluaciones, bloques = [], []
     for k in range(4):
-        _avisar(avance, "validación por bloques de tiempo", k / 4)
+        _avisar(avance, ETAPA_VALIDACION, k / 4)
         inicio, fin = cortes[k], cortes[k + 1]
         referencias, escalas = referencias_y_escalas(datos[datos["fecha_hora"] < inicio])
         if not referencias:
@@ -157,7 +160,7 @@ def validar_por_bloques(datos: pd.DataFrame, metadatos: dict, avance: Avance | N
         raise ErrorDeReentrenamiento("Todavía no hay datos suficientes para validar el modelo por bloques de tiempo.")
     todas = pd.concat(evaluaciones, ignore_index=True)
     metricas = pd.DataFrame({nombre: medir(todas["real"], todas[nombre]) for nombre in REGLAS + [BOSQUE]}).T
-    _avisar(avance, "validación por bloques de tiempo", 1.0)
+    _avisar(avance, ETAPA_VALIDACION, 1.0)
     return {"momentos": len(todas), "con_rojo": int((todas["real"] == 2).sum()), "bloques": bloques,
             "metricas": metricas.round(3).to_dict(orient="index")}
 
@@ -194,11 +197,11 @@ def entrenar_version(datos: pd.DataFrame, metadatos_anterior: dict, modelo_anter
     fin_anterior = pd.Timestamp(metadatos_anterior["periodo_datos"][1])
     horas_nuevas = int(((datos["fecha_hora"] > fin_anterior) & datos["nivel_m"].notna()).sum())
 
-    _avisar(avance, "revisión del modelo actual con los datos nuevos", 0.0)
+    _avisar(avance, ETAPA_ACTUAL, 0.0)
     actual = evaluar_modelo_actual(datos, metadatos_anterior, modelo_anterior, fin_anterior) if modelo_anterior is not None else None
     validacion = validar_por_bloques(datos, metadatos_anterior, avance)
 
-    _avisar(avance, "entrenamiento con todos los datos", 0.0)
+    _avisar(avance, ETAPA_ENTRENAMIENTO, 0.0)
     referencias, escalas = referencias_y_escalas(datos)
     sin_lecturas = [e for e in codigos if e not in referencias]
     if sin_lecturas:
@@ -219,7 +222,8 @@ def entrenar_version(datos: pd.DataFrame, metadatos_anterior: dict, modelo_anter
                               "valor_reglas_simples": {nombre: metricas[nombre]["F1 del rojo"] for nombre in REGLAS}},
         "metricas_validacion": metricas,
         "archivo_modelo": f"modelo_semaforo_{version}.joblib",
-        "reentrenamiento": {"version_anterior": metadatos_anterior["version"], "datos_nuevos_desde": str(fin_anterior), "horas_nuevas_con_nivel": horas_nuevas},
+        "reentrenamiento": {"version_anterior": metadatos_anterior["version"], "datos_nuevos_desde": str(fin_anterior), "horas_nuevas_con_nivel": horas_nuevas,
+                          "modelo_anterior_en_datos_nuevos": actual},
     })
     for estacion in codigos:
         metadatos["estaciones"][estacion]["escala_nivel_m"] = round(escalas[estacion], 4)
@@ -230,7 +234,7 @@ def entrenar_version(datos: pd.DataFrame, metadatos_anterior: dict, modelo_anter
                    "metricas": {m: {"anterior": anterior.get(m), "nueva": metricas[BOSQUE][m]} for m in METRICAS}}
     valor_anterior = metadatos_anterior["metrica_principal"].get("valor_modelo")
     comparacion["diferencia_f1"] = None if valor_anterior is None else round(metricas[BOSQUE]["F1 del rojo"] - valor_anterior, 3)
-    _avisar(avance, "entrenamiento con todos los datos", 1.0)
+    _avisar(avance, ETAPA_ENTRENAMIENTO, 1.0)
     return {"version": version, "modelo": modelo, "metadatos": metadatos, "validacion": validacion, "comparacion": comparacion,
             "modelo_actual_en_datos_nuevos": actual}
 

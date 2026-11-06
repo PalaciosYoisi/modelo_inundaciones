@@ -1,4 +1,4 @@
-"""Copia la base local (XAMPP) a la base en la nube: usuarios, auditoría, lotes y lecturas publicadas.
+"""Copia la base local (XAMPP) a la base en la nube: usuarios, auditoría, lotes, lecturas publicadas y versiones del modelo.
 
 La de origen es la que usa el proyecto normalmente (variables SEMAFORO_BD_*). La de destino se indica con las mismas
 variables pero con el prefijo DESTINO_BD_ (HOST, PUERTO, USUARIO, CLAVE, NOMBRE y SSL=si). Se puede repetir sin problema:
@@ -12,13 +12,14 @@ import sys
 import pandas as pd
 
 import lotes
+import versiones
 from base_datos import ErrorBaseDatos, conexion, crear_tablas
 from ingesta import CARPETA_MODELOS, DATOS_INICIALES, PUBLICADO_ANTERIOR
 from pipeline import cargar_metadatos, version_activa
 from publicacion import Publicacion
 
 ORIGEN, DESTINO = "SEMAFORO_BD", "DESTINO_BD"
-TABLAS = ["usuarios", "auditoria", "lotes", "lecturas"]
+TABLAS = ["usuarios", "auditoria", "lotes", "lecturas", "modelos", "modelo_trozos"]
 POR_ENVIO = 500
 
 
@@ -37,9 +38,10 @@ def _copiar(tabla: str) -> int:
         return 0
     columnas = list(filas[0])
     sentencia = f"REPLACE INTO {tabla} ({', '.join(columnas)}) VALUES ({', '.join(['%s'] * len(columnas))})"
+    por_envio = 1 if tabla == "modelo_trozos" else POR_ENVIO          # cada trozo del modelo ya pesa cientos de KB
     with conexion(DESTINO) as cursor:
-        for i in range(0, len(filas), POR_ENVIO):
-            cursor.executemany(sentencia, [tuple(f[c] for c in columnas) for f in filas[i:i + POR_ENVIO]])
+        for i in range(0, len(filas), por_envio):
+            cursor.executemany(sentencia, [tuple(f[c] for c in columnas) for f in filas[i:i + por_envio]])
     return len(filas)
 
 
@@ -52,6 +54,7 @@ if __name__ == "__main__":
         crear_tablas(ORIGEN)                          # por si la local es de una versión anterior
         codigos = list(cargar_metadatos(CARPETA_MODELOS / version_activa(CARPETA_MODELOS))["estaciones"])
         Publicacion(DATOS_INICIALES, PUBLICADO_ANTERIOR).tabla(codigos)         # llena las lecturas locales con lo que ya estaba publicado
+        versiones.sembrar(CARPETA_MODELOS)                                      # y las versiones del modelo con las de la carpeta modelos/
         print(f"Base de destino «{crear_tablas(DESTINO)}» lista.")
         for tabla in TABLAS:
             print(f"  {tabla}: {_copiar(tabla)} filas copiadas")

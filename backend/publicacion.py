@@ -3,7 +3,8 @@
 La primera vez la tabla se llena con lo que ya había publicado (datos/publicado/lecturas.csv, de versiones anteriores) o, si
 no existe, con datos/datos_horarios.csv. Después crece cuando un administrador confirma un lote: las horas nuevas se agregan
 y, si una hora ya existía, el valor nuevo la reemplaza (un valor vacío nunca borra un dato que ya estaba).
-Solo se conservan los últimos 120 días de cada estación, que es lo que el modelo necesita.
+Todo se conserva. Para calcular el semáforo solo se leen los últimos 120 días de cada estación, que es lo que el modelo necesita;
+el reentrenamiento, en cambio, lee todo.
 """
 import threading
 from datetime import datetime
@@ -14,7 +15,7 @@ import pandas as pd
 from base_datos import ErrorBaseDatos, conexion
 from hora import hora_actual
 
-HORAS_A_CONSERVAR = 24 * 120
+HORAS_DE_VENTANA = 24 * 120         # el semáforo se calcula con los últimos 120 días de cada estación; se guarda todo
 MAX_HORAS_SIN_DATO = 48           # una lectura más vieja se considera desactualizada
 COLUMNAS = ["estacion", "fecha_hora", "nivel_m", "lluvia_mm"]
 LLAVES = ["estacion", "fecha_hora"]
@@ -35,11 +36,6 @@ class Publicacion:
 
     # ------------------------------------------------------------------ lecturas guardadas
     @staticmethod
-    def _recortar(tabla: pd.DataFrame) -> pd.DataFrame:
-        limite = tabla.groupby("estacion")["fecha_hora"].transform("max") - pd.Timedelta(hours=HORAS_A_CONSERVAR)
-        return tabla[tabla["fecha_hora"] >= limite]
-
-    @staticmethod
     def _subir(cursor, tabla: pd.DataFrame) -> None:
         """Agrega o actualiza lecturas. Un valor vacío no borra el que ya estaba."""
         sentencia = ("INSERT INTO lecturas (estacion, fecha_hora, nivel_m, lluvia_mm, actualizado) VALUES (%s, %s, %s, %s, %s) "
@@ -55,34 +51,37 @@ class Publicacion:
             cursor.execute("SELECT COUNT(*) AS n FROM lecturas")
             if cursor.fetchone()["n"]:
                 return
-            origen = self.anterior if self.anterior and self.anterior.exists() else self.origen
-            inicial = pd.read_csv(origen, usecols=COLUMNAS, dtype={"estacion": str}, parse_dates=["fecha_hora"])
-            self._subir(cursor, self._recortar(inicial[inicial["estacion"].isin(codigos)]))
+            leer = lambda ruta: pd.read_csv(ruta, usecols=COLUMNAS, dtype={"estacion": str}, parse_dates=["fecha_hora"])
+            inicial = leer(self.origen)
+            if self.anterior and self.anterior.exists():          # lo que se publicó en versiones anteriores es más reciente que el archivo inicial
+                inicial = pd.concat([inicial, leer(self.anterior)]).drop_duplicates(LLAVES, keep="last")
+            self._subir(cursor, inicial[inicial["estacion"].isin(codigos)])
 
-    def tabla(self, codigos) -> pd.DataFrame:
+    def tabla(self, codigos, completa: bool = False) -> pd.DataFrame:
+        """Las lecturas guardadas. Por defecto, solo la ventana reciente de cada estación (lo que se usa para el semáforo); completa=True trae todo."""
         with _cerrojo:
             self._sembrar(codigos)
             with conexion() as cursor:
-                cursor.execute("SELECT estacion, fecha_hora, nivel_m, lluvia_mm FROM lecturas ORDER BY estacion, fecha_hora")
+                if completa:
+                    cursor.execute("SELECT estacion, fecha_hora, nivel_m, lluvia_mm FROM lecturas ORDER BY estacion, fecha_hora")
+                else:
+                    cursor.execute("SELECT l.estacion, l.fecha_hora, l.nivel_m, l.lluvia_mm FROM lecturas l "
+                                   "JOIN (SELECT estacion, MAX(fecha_hora) AS ultima FROM lecturas GROUP BY estacion) u ON u.estacion = l.estacion "
+                                   "WHERE l.fecha_hora >= u.ultima - INTERVAL %s HOUR ORDER BY l.estacion, l.fecha_hora", (HORAS_DE_VENTANA,))
                 filas = cursor.fetchall()
             tabla = pd.DataFrame(filas, columns=COLUMNAS)
             tabla["fecha_hora"] = pd.to_datetime(tabla["fecha_hora"])
             return tabla.astype({"nivel_m": float, "lluvia_mm": float})
 
     def integrar(self, nuevas: pd.DataFrame, codigos) -> dict:
-        """Suma las lecturas nuevas (ya normalizadas: estación, hora, nivel y lluvia) a las publicadas."""
+        """Suma las lecturas nuevas (ya normalizadas: estación, hora, nivel y lluvia) a las guardadas. Nada se recorta ni se borra."""
         with _cerrojo:
-            actuales = self.tabla(codigos).set_index(LLAVES)
+            guardadas = self.tabla(codigos, completa=True).set_index(LLAVES)
             nuevas = nuevas[COLUMNAS].drop_duplicates(LLAVES, keep="last").set_index(LLAVES)
-            ya_existian = nuevas.index.isin(actuales.index)
-            combinadas = self._recortar(nuevas.combine_first(actuales).reset_index().sort_values(LLAVES))
-            conservadas = nuevas.index.isin(pd.MultiIndex.from_frame(combinadas[LLAVES]))      # las muy antiguas no se guardan
+            ya_existian = nuevas.index.isin(guardadas.index)
             with conexion() as cursor:
-                self._subir(cursor, nuevas[conservadas].reset_index())
-                cursor.execute("DELETE l FROM lecturas l JOIN (SELECT estacion, MAX(fecha_hora) AS ultima FROM lecturas GROUP BY estacion) u "
-                               "ON u.estacion = l.estacion WHERE l.fecha_hora < u.ultima - INTERVAL %s HOUR", (HORAS_A_CONSERVAR,))
-            return {"filas_recibidas": len(nuevas), "agregadas": int((conservadas & ~ya_existian).sum()),
-                    "actualizadas": int((conservadas & ya_existian).sum()), "descartadas_por_antiguas": int((~conservadas).sum()),
+                self._subir(cursor, nuevas.reset_index())
+            return {"filas_recibidas": len(nuevas), "agregadas": int((~ya_existian).sum()), "actualizadas": int(ya_existian.sum()),
                     "estaciones": sorted(nuevas.reset_index()["estacion"].unique())}
 
     # ------------------------------------------------------------------ lo que ve el público

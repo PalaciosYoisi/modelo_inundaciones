@@ -52,8 +52,9 @@
       </a>
       <nav class="lateral__menu" aria-label="Secciones">
         <button class="lateral__enlace" type="button" data-vista="resumen" aria-current="page"><svg aria-hidden="true"><use href="img/iconos.svg#semaforo"></use></svg>Resumen</button>
-        <button class="lateral__enlace" type="button" data-vista="consulta"><svg aria-hidden="true"><use href="img/iconos.svg#lluvia"></use></svg>Consulta diaria<span class="insignia" id="insignia-consulta" hidden></span></button>
+        <button class="lateral__enlace" type="button" data-vista="consulta"><svg aria-hidden="true"><use href="img/iconos.svg#lluvia"></use></svg>Datos nuevos<span class="insignia" id="insignia-consulta" hidden></span></button>
         <button class="lateral__enlace" type="button" data-vista="datos"><svg aria-hidden="true"><use href="img/iconos.svg#carga"></use></svg>Cargar archivo</button>
+        <button class="lateral__enlace" type="button" data-vista="modelo"><svg aria-hidden="true"><use href="img/iconos.svg#grafica"></use></svg>Actualizar el modelo</button>
         <button class="lateral__enlace" type="button" data-vista="descargas"><svg aria-hidden="true"><use href="img/iconos.svg#descarga"></use></svg>Descargas</button>
         <button class="lateral__enlace" type="button" data-vista="actividad"><svg aria-hidden="true"><use href="img/iconos.svg#reloj"></use></svg>Actividad</button>
         <button class="lateral__enlace" type="button" data-vista="equipo"><svg aria-hidden="true"><use href="img/iconos.svg#candado"></use></svg>Administradores</button>
@@ -76,6 +77,10 @@
             <span>Hay datos nuevos de datos.gov.co esperando su revisión.</span>
             <button class="boton boton--primario boton--pequeno" id="ir-a-consulta" type="button">Revisar</button>
           </div>
+          <div class="aviso-lote" id="aviso-modelo" hidden>
+            <span>Ya hay información nueva suficiente para actualizar el modelo.</span>
+            <button class="boton boton--primario boton--pequeno" id="ir-a-modelo" type="button">Ver</button>
+          </div>
           <div class="indicadores" id="indicadores" aria-live="polite"></div>
           <article class="tarjeta">
             <h2>Estaciones publicadas</h2>
@@ -84,11 +89,11 @@
           </article>
         </section>
 
-        <!--  Consulta diaria -->
+        <!-- Datos nuevos -->
         <section id="vista-consulta" hidden>
           <article class="tarjeta">
             <h2>Datos nuevos de datos.gov.co</h2>
-            <p class="tarjeta__texto">Cada día el sistema consulta los datos del IDEAM y los deja aquí. Usted los revisa y decide si pasan al modelo.</p>
+            <p class="tarjeta__texto">Use «Consultar ahora» para traer los datos más recientes del IDEAM. Quedan aquí para que usted los revise y decida si pasan al modelo.</p>
             <div class="acciones"><button class="boton boton--primario" id="cons-ahora" type="button"><svg aria-hidden="true"><use href="img/iconos.svg#lluvia"></use></svg>Consultar ahora</button></div>
             <div class="aviso" id="cons-aviso" role="status" aria-live="polite" hidden></div>
             <div id="cons-lista"><p class="vacio">Cargando…</p></div>
@@ -123,6 +128,27 @@
           <article class="tarjeta panel" id="adm-analisis" hidden></article>
         </section>
 
+        <!-- Actualizar el modelo -->
+        <section id="vista-modelo" hidden>
+          <article class="tarjeta" id="mod-sugerencia"><h2>¿Conviene actualizar el modelo?</h2><p class="vacio">Cargando…</p></article>
+          <article class="tarjeta">
+            <h2>Actualizar el modelo</h2>
+            <p class="tarjeta__texto">El modelo aprende de los datos que ya están publicados. Al actualizarlo se entrena una versión nueva con todos esos datos y se compara con la que está en uso. La versión nueva no se usa hasta que usted decida. Puede tardar varios minutos. Conviene actualizar cuando ya haya confirmado varias semanas de datos nuevos: con pocos días, las diferencias suelen ser casualidad.</p>
+            <div class="acciones">
+              <button class="boton boton--primario" id="mod-actualizar" type="button"><svg aria-hidden="true"><use href="img/iconos.svg#grafica"></use></svg>Actualizar el modelo</button>
+              <button class="boton boton--contorno-oscuro" id="mod-forzar" type="button" hidden>Entrenar de todos modos</button>
+            </div>
+            <div class="avance" id="mod-avance" hidden></div>
+            <div class="aviso" id="mod-aviso" role="status" aria-live="polite" hidden></div>
+          </article>
+          <article class="tarjeta">
+            <h2>Versiones del modelo</h2>
+            <p class="tarjeta__texto">Cada actualización deja una versión nueva. Aquí ve cuál está en uso y cuáles esperan una decisión. El puntaje del rojo va de 0 a 1 y mide qué tan bien se anticipan las crecidas (1 sería perfecto).</p>
+            <div id="mod-versiones"><p class="vacio">Cargando…</p></div>
+          </article>
+          <article class="tarjeta panel" id="mod-detalle" hidden></article>
+        </section>
+
         <!-- Descargas -->
         <section id="vista-descargas" hidden>
           <article class="tarjeta">
@@ -148,7 +174,8 @@
         <section id="vista-equipo" hidden>
           <article class="tarjeta">
             <h2>Administradores</h2>
-            <p class="tarjeta__texto">Si alguien se bloquea por equivocarse varias veces con la clave, otro administrador puede desbloquearlo aquí.</p>
+            <p class="tarjeta__texto">Si alguien se bloquea por equivocarse varias veces con la clave, otro administrador puede desbloquearlo aquí. Si alguien olvidó su clave, otro administrador puede restablecerla: se genera una clave temporal, usted se la entrega y esa persona debe cambiarla al ingresar.</p>
+            <div class="aviso" id="equipo-aviso" role="status" aria-live="polite" hidden></div>
             <div id="tabla-equipo"><p class="vacio">Cargando…</p></div>
           </article>
         </section>

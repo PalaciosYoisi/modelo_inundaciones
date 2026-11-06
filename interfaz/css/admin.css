@@ -21,8 +21,12 @@ body.adm { background: #eaf0f5; }
 /* ---------------------------------------------------------------- Estructura: menú lateral + cuerpo */
 .panel-admin { display: grid; grid-template-columns: 260px 1fr; min-height: 100svh; }
 .panel-admin[hidden] { display: none; }
-.lateral { background: var(--noche); color: var(--blanco); padding: 1.6rem 1rem; display: flex; flex-direction: column; gap: 2rem; position: sticky; top: 0; height: 100svh; background-image: radial-gradient(circle at 100% 0%, rgba(34, 193, 214, .16), transparent 55%); }
-.lateral .marca { padding: 0 .6rem; }
+.lateral { background: var(--noche); color: var(--blanco); padding: 1.6rem 1rem; display: flex; flex-direction: column; gap: 1.6rem; position: sticky; top: 0; height: 100svh; overflow-y: auto; background-image: radial-gradient(circle at 100% 0%, rgba(34, 193, 214, .16), transparent 55%); }
+.lateral .marca { display: flex; align-items: center; gap: .8rem; padding: 0 .6rem; color: var(--blanco); text-decoration: none; }
+.lateral .marca__icono { width: 40px; height: 40px; flex: none; color: var(--agua); }
+.lateral .marca__texto { display: flex; flex-direction: column; line-height: 1.05; }
+.lateral .marca__nombre b { color: var(--agua); font-weight: 900; }
+.lateral .marca small { margin-top: 4px; font-size: .66rem; letter-spacing: .16em; text-transform: uppercase; opacity: .72; }
 .lateral .marca__nombre { font-size: 1.4rem; }
 .lateral__menu { display: grid; gap: .3rem; }
 .lateral__enlace { display: flex; align-items: center; gap: .8rem; width: 100%; padding: .8rem 1rem; border: 0; border-radius: 12px; background: none; color: rgba(255, 255, 255, .78); font-weight: 700; font-size: 1rem; text-decoration: none; text-align: left; cursor: pointer; transition: background .15s, color .15s; }
@@ -140,7 +144,7 @@ body.adm { background: #eaf0f5; }
 .ingreso__ayuda { color: var(--texto-suave); margin: -.2rem 0 .5rem; }
 .tabla button { white-space: nowrap; }
 
-/* ---------------------------------------------------------------- Consulta diaria */
+/* ---------------------------------------------------------------- Datos nuevos */
 .insignia { margin-left: auto; min-width: 1.4rem; height: 1.4rem; padding: 0 .4rem; display: inline-grid; place-items: center; border-radius: 999px; background: var(--rojo); color: var(--blanco); font-size: .78rem; font-weight: 900; }
 .insignia[hidden] { display: none; }
 .aviso-lote { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .8rem 1.5rem; padding: 1rem 1.3rem; border-radius: var(--radio-grande); background: var(--amarillo-suave); border: 1px solid #f0d68b; font-weight: 700; }
@@ -192,3 +196,22 @@ body.adm { background: #eaf0f5; }
 .informe__icono svg { width: 17px; height: 17px; }
 .informe p { margin: .2rem 0; }
 .informe__estaciones { color: var(--texto-suave); font-size: .92rem; }
+.boton[hidden] { display: none; }
+.marcas { display: grid; gap: 1rem; margin-bottom: 1rem; }
+.marca-grupo { border: 1px solid var(--linea); border-radius: var(--radio); padding: 1rem 1.2rem; background: var(--blanco); }
+.marca-grupo__cabecera { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1rem; margin-bottom: .4rem; }
+.marca-grupo__cabecera span:not(.etiqueta) { color: var(--texto-suave); font-size: .9rem; }
+.marca-grupo p { margin: 0 0 .6rem; }
+.conservar { display: inline-flex; align-items: center; gap: .5rem; font-weight: 700; cursor: pointer; }
+.fila-marcada td { background: var(--amarillo-suave); }
+.acciones-fila { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.avance { margin-top: 1.2rem; }
+.avance[hidden] { display: none; }
+.avance__texto { display: flex; justify-content: space-between; gap: 1rem; font-weight: 800; margin-bottom: .4rem; }
+.avance__fondo { height: 14px; border-radius: 999px; background: var(--gris); overflow: hidden; }
+.avance__barra { height: 100%; border-radius: inherit; background: var(--agua); transition: width .6s ease; }
+.recomendacion--poner_en_uso, .recomendacion--actualizar { --c: var(--verde); --s: var(--verde-suave); }
+.recomendacion--casi { --c: #d99a0b; --s: var(--amarillo-suave); }
+.recomendacion--esperar { --c: var(--azul); --s: var(--agua-suave); }
+.recomendacion--mantener { --c: var(--azul); --s: var(--agua-suave); }
+@media (max-width: 480px) { .superior { gap: .6rem; } .superior h1 { font-size: 1.15rem; min-width: 0; } .superior .boton { padding: .55rem 1rem; font-size: .88rem; } }

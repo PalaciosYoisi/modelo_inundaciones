@@ -10,23 +10,44 @@ import os
 from pathlib import Path
 
 import pandas as pd
+import pymysql
 
-from base_datos import conexion
+from base_datos import ERROR_COLUMNA_REPETIDA, conexion
 from hora import hora_actual
+from preparacion import MAX_MARCAS_GUARDADAS
 
 RAIZ = Path(__file__).resolve().parents[1]
 CARPETA_ANTERIOR = Path(os.environ.get("SEMAFORO_LOTES", RAIZ / "datos" / "lotes"))      # lotes guardados como archivo en versiones anteriores
 ESTADOS_FINALES = ("confirmado", "rechazado")
+_columna_lista = False                                                # la columna de las marcas ya se comprobó en este proceso
 
 
-def crear(origen: str, estado: str, tabla: pd.DataFrame, resumen: dict, unifica: list[int] = ()) -> int:
-    """Guarda un lote nuevo. Los lotes pendientes que se combinaron en él (unifica) quedan como unificados y apuntan al nuevo."""
+def _preparar(cursor) -> None:
+    """Agrega la columna de las marcas a los lotes guardados antes de que existiera."""
+    global _columna_lista
+    if not _columna_lista:
+        try:
+            cursor.execute("ALTER TABLE lotes ADD COLUMN marcas LONGTEXT NULL")
+        except pymysql.err.OperationalError as error:
+            if error.args[0] != ERROR_COLUMNA_REPETIDA:
+                raise
+        _columna_lista = True
+
+
+def crear(origen: str, estado: str, tabla: pd.DataFrame, resumen: dict, unifica: list[int] = (), marcas: list[dict] | None = None) -> int:
+    """Guarda un lote nuevo. Los lotes pendientes que se combinaron en él (unifica) quedan como unificados y apuntan al nuevo.
+
+    marcas: las lecturas que el sistema propone no usar (con su motivo y justificación). Se guardan completas hasta cierto límite;
+    el conteo de todas queda siempre en el resumen.
+    """
+    marcas = marcas or []
     with conexion() as cursor:
+        _preparar(cursor)
         cursor.execute("SELECT COALESCE(MAX(id), 0) + 1 AS siguiente FROM lotes")      # numeración corrida (Lote 1, Lote 2...), sin los saltos que hace la base en la nube
         id_lote = cursor.fetchone()["siguiente"]
-        cursor.execute("INSERT INTO lotes (id, creado, origen, estado, desde, hasta, filas, resumen, archivo, datos) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, '', %s)",
+        cursor.execute("INSERT INTO lotes (id, creado, origen, estado, desde, hasta, filas, resumen, archivo, datos, marcas) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, '', %s, %s)",
                        (id_lote, hora_actual(), origen, estado, resumen.get("desde"), resumen.get("hasta"), len(tabla), json.dumps(resumen, ensure_ascii=False, default=str),
-                        tabla.to_csv(index=False)))
+                        tabla.to_csv(index=False), json.dumps(marcas[:MAX_MARCAS_GUARDADAS], ensure_ascii=False, default=str)))
         for anterior in unifica:
             cursor.execute("SELECT resumen FROM lotes WHERE id=%s", (anterior,))
             ficha = json.loads(cursor.fetchone()["resumen"] or "{}")
@@ -68,6 +89,37 @@ def datos(id_lote: int) -> pd.DataFrame:
     return pd.read_csv(origen, dtype={"estacion": str}, parse_dates=["fecha_hora"])
 
 
+def marcas_de(id_lote: int) -> list[dict]:
+    """Las lecturas que el sistema marcó en ese lote. Los lotes anteriores a las marcas devuelven una lista vacía."""
+    with conexion() as cursor:
+        _preparar(cursor)
+        cursor.execute("SELECT marcas FROM lotes WHERE id=%s", (id_lote,))
+        fila = cursor.fetchone()
+    return json.loads(fila["marcas"]) if fila and fila["marcas"] else []
+
+
+def unir_marcas(nuevas: list[dict], anteriores: list[dict]) -> list[dict]:
+    """Marcas de la consulta nueva más las de los lotes pendientes que se combinan con ella. Si una hora está en las dos, vale la más nueva."""
+    clave = lambda m: (m["motivo"], m["estacion"], m["fecha_hora"], m["variable"])
+    unidas = {clave(m): m for a in sorted(anteriores, key=lambda x: x["id"]) for m in a.get("marcas", [])}
+    unidas.update({clave(m): m for m in nuevas})
+    return list(unidas.values())
+
+
+def guardar_datos(id_lote: int, tabla: pd.DataFrame) -> None:
+    """Deja en el lote la tabla tal como se publicó (por ejemplo, con los picos que la persona decidió conservar)."""
+    with conexion() as cursor:
+        cursor.execute("UPDATE lotes SET datos=%s, filas=%s WHERE id=%s", (tabla.to_csv(index=False), len(tabla), id_lote))
+
+
+def guardar_decision(id_lote: int, decision: dict) -> None:
+    """Anota en la ficha del lote qué se hizo con cada grupo de lecturas marcadas y por qué."""
+    with conexion() as cursor:
+        cursor.execute("SELECT resumen FROM lotes WHERE id=%s", (id_lote,))
+        ficha = json.loads(cursor.fetchone()["resumen"] or "{}")
+        cursor.execute("UPDATE lotes SET resumen=%s WHERE id=%s", (json.dumps({**ficha, "decision_de_lecturas": decision}, ensure_ascii=False, default=str), id_lote))
+
+
 def pendientes() -> int:
     with conexion() as cursor:
         cursor.execute("SELECT COUNT(*) AS n FROM lotes WHERE estado='pendiente'")
@@ -77,12 +129,13 @@ def pendientes() -> int:
 def pendientes_con_datos() -> list[dict]:
     """Los lotes pendientes con su tabla de lecturas (para combinarlos con una consulta nueva)."""
     with conexion() as cursor:
-        cursor.execute("SELECT id, creado FROM lotes WHERE estado='pendiente' ORDER BY id")
+        _preparar(cursor)
+        cursor.execute("SELECT id, creado, marcas FROM lotes WHERE estado='pendiente' ORDER BY id")
         fichas = cursor.fetchall()
     resultado = []
     for ficha in fichas:
         try:
-            resultado.append({**ficha, "tabla": datos(ficha["id"])})
+            resultado.append({"id": ficha["id"], "creado": ficha["creado"], "marcas": json.loads(ficha["marcas"]) if ficha["marcas"] else [], "tabla": datos(ficha["id"])})
         except FileNotFoundError:
             continue
     return resultado

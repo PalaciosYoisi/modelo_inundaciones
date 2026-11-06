@@ -26,18 +26,21 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as ErrorHTTP
 
+import actualizacion
 import auditoria
-import consultar_diario
+import consulta_manual
 import entrada
 import ingesta
 import lotes
+import preparacion
 import recomendacion
 import reportes
 import usuarios
+import versiones
 from base_datos import ErrorBaseDatos
 from ingesta import CARPETA_MODELOS, DATOS_INICIALES, PUBLICADO_ANTERIOR
 from eda import analizar
-from pipeline import PipelineSemaforo, normalizar_tabla, version_activa
+from pipeline import PipelineSemaforo, normalizar_tabla
 from publicacion import Publicacion
 from validacion import validar
 
@@ -115,12 +118,14 @@ def leer_archivo(archivo: UploadFile) -> tuple[pd.DataFrame, str]:
 
 @lru_cache(maxsize=4)
 def _cargar(version: str) -> PipelineSemaforo:
-    return PipelineSemaforo.cargar(CARPETA_MODELOS / version)
+    return versiones.cargar(version, CARPETA_MODELOS)
 
 
 def pipeline_activo() -> PipelineSemaforo:
     try:
-        return _cargar(version_activa(CARPETA_MODELOS))
+        pipeline = _cargar(versiones.activa(CARPETA_MODELOS))
+        pipeline.metadatos["estado"] = "activo"               # la versión pudo cargarse como candidata antes de que la activaran
+        return pipeline
     except FileNotFoundError as error:
         raise ErrorDeUsuario(str(error), 404, "MODELO_NO_DISPONIBLE")
 
@@ -243,6 +248,14 @@ def ingresar(datos: Credenciales, request: Request):
 
 class Rechazo(BaseModel):
     motivo: str = ""
+
+
+class Decision(BaseModel):
+    justificacion: str = ""
+
+
+class Confirmacion(BaseModel):
+    conservar: list[str] = []            # los grupos de lecturas marcadas que la persona decidió conservar
 
 
 cuenta = APIRouter(prefix="/cuenta", tags=["Administrador"], dependencies=[Depends(exigir_sesion)])
@@ -387,7 +400,21 @@ def desbloquear(usuario: str, request: Request, sesion: dict = Depends(exigir_ad
     return {"estado": "ok"}
 
 
-# ------------------------------------------------------------------ consulta diaria: lotes de datos nuevos
+@admin.post("/administradores/{usuario}/restablecer", summary="Restablecer la clave de otro administrador: recibe una clave temporal y debe cambiarla al ingresar")
+def restablecer_clave(usuario: str, request: Request, sesion: dict = Depends(exigir_administrador)):
+    objetivo = usuario.strip().lower()
+    if objetivo == sesion["usuario"]:
+        raise ErrorDeUsuario("No puede restablecer su propia clave desde aquí. Pídale a otro administrador que lo haga.", 400, "CLAVE_PROPIA")
+    auditar(request, sesion["usuario"], "restablecer_clave", {"usuario": objetivo}, estricto=True)          # la clave nueva nunca se anota
+    try:
+        clave = usuarios.restablecer(objetivo)
+    except usuarios.ErrorDeAcceso as error:
+        raise ErrorDeUsuario(error.mensaje, error.estado, error.codigo)
+    nombre = next((a["nombre"] for a in usuarios.listar() if a["usuario"] == objetivo), objetivo)
+    return JSONResponse(content={"usuario": objetivo, "nombre": nombre, "clave_temporal": clave}, headers={"Cache-Control": "no-store"})
+
+
+# ------------------------------------------------------------------ datos nuevos: lotes que esperan la decisión de un administrador
 def _lote(id_lote: int) -> dict:
     ficha = lotes.obtener(id_lote)
     if ficha is None:
@@ -435,13 +462,48 @@ def descargar_lote(id_lote: int, request: Request, sesion: dict = Depends(exigir
                     headers={"Content-Disposition": f'attachment; filename="lote_{id_lote}.csv"'})
 
 
+@admin.get("/lotes/{id_lote}/marcas", summary="Las lecturas que el sistema propone no usar en un lote, con su motivo y el valor que llegó")
+def marcas_del_lote(id_lote: int, motivo: str | None = Query(None), limite: int = Query(300, ge=1, le=2000)):
+    _lote(id_lote)
+    marcas = [m for m in lotes.marcas_de(id_lote) if motivo is None or m["motivo"] == motivo]
+    return a_json_seguro({"total": len(marcas), "marcas": marcas[:limite]})
+
+
+@admin.get("/lotes/{id_lote}/marcas.csv", summary="Descargar las lecturas marcadas del lote (CSV)")
+def descargar_marcas(id_lote: int, request: Request, sesion: dict = Depends(exigir_administrador)):
+    _lote(id_lote)
+    marcas = lotes.marcas_de(id_lote)
+    tabla = pd.DataFrame([{"motivo": preparacion.MOTIVOS[m["motivo"]]["titulo"], "sensor": m["estacion"], "fecha_hora": m["fecha_hora"], "variable": m["variable"],
+                           "valor_recibido": m["valor"], "lecturas": m["lecturas"], "detalle": m["detalle"], "justificacion": preparacion.MOTIVOS[m["motivo"]]["justificacion"]}
+                          for m in marcas if m["motivo"] in preparacion.MOTIVOS])
+    auditar(request, sesion["usuario"], "descargar_marcas", {"lote": id_lote, "filas": len(tabla)})
+    return Response(content=tabla.to_csv(index=False).encode("utf-8-sig"), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="lote_{id_lote}_lecturas_marcadas.csv"'})
+
+
+@admin.get("/lotes/{id_lote}/horas", summary="Todas las horas de un lote para una estación, con las marcadas resaltadas")
+def horas_del_lote(id_lote: int, estacion: str = Query(...), pagina: int = Query(0, ge=0), por_pagina: int = Query(200, ge=10, le=1000)):
+    _lote(id_lote)
+    propias = _datos_del_lote(id_lote).query("estacion == @estacion")[["fecha_hora", "nivel_m", "lluvia_mm"]]
+    marcadas = {pd.Timestamp(m["fecha_hora"]): m["motivo"] for m in lotes.marcas_de(id_lote) if m["estacion"] == estacion and m["variable"] == "nivel"}
+    faltan = [h for h in marcadas if h not in set(propias["fecha_hora"])]
+    if faltan:                            # una hora cuyo único nivel se excluyó no tiene fila en el lote; se muestra igual, para que se vea qué pasó
+        propias = pd.concat([propias, pd.DataFrame({"fecha_hora": faltan, "nivel_m": np.nan, "lluvia_mm": np.nan})], ignore_index=True)
+    propias = propias.sort_values("fecha_hora", ascending=False).assign(marca=lambda d: d["fecha_hora"].map(marcadas))
+    pedazo = propias.iloc[pagina * por_pagina:(pagina + 1) * por_pagina]
+    return a_json_seguro({"total": len(propias), "pagina": pagina, "por_pagina": por_pagina, "filas": pedazo.to_dict(orient="records")})
+
+
 @admin.post("/lotes/{id_lote}/confirmar", summary="Confirmar un lote: sus lecturas pasan a lo publicado y al modelo")
-def confirmar_lote(id_lote: int, request: Request, sesion: dict = Depends(exigir_administrador)):
+def confirmar_lote(id_lote: int, request: Request, datos: Confirmacion | None = None, sesion: dict = Depends(exigir_administrador)):
     ficha = _lote(id_lote)
     if ficha["estado"] != "pendiente":
         raise ErrorDeUsuario("Este lote ya no está pendiente (se confirmó, se rechazó o llegó uno más nuevo). Actualice la lista.", 409, "LOTE_NO_PENDIENTE")
-    tabla = _datos_del_lote(id_lote)
-    auditar(request, sesion["usuario"], "confirmar_lote", {"lote": id_lote, "filas": len(tabla)}, estricto=True)
+    marcas = lotes.marcas_de(id_lote)
+    conservar = [m for m in (datos.conservar if datos else []) if preparacion.MOTIVOS.get(m, {}).get("conservable")]
+    decision = preparacion.decision_de_lecturas(marcas, conservar)
+    tabla = preparacion.conservar_lecturas(_datos_del_lote(id_lote), marcas, conservar)
+    auditar(request, sesion["usuario"], "confirmar_lote", {"lote": id_lote, "filas": len(tabla), **({"lecturas": decision} if decision else {})}, estricto=True)
     if not lotes.decidir(id_lote, "confirmado", sesion["usuario"]):
         raise ErrorDeUsuario("Otra persona ya decidió sobre este lote.", 409, "LOTE_NO_PENDIENTE")
     pipeline = pipeline_activo()
@@ -451,6 +513,10 @@ def confirmar_lote(id_lote: int, request: Request, sesion: dict = Depends(exigir
         lotes.reabrir(id_lote)
         auditar(request, sesion["usuario"], "confirmar_lote_fallido", {"lote": id_lote})
         raise
+    if decision:                          # el lote queda con lo que realmente se publicó y con lo que se decidió sobre cada grupo de lecturas
+        if conservar:
+            lotes.guardar_datos(id_lote, tabla)
+        lotes.guardar_decision(id_lote, decision)
     return a_json_seguro({"lote": id_lote, "cambios": cambios, **publicacion().estaciones(pipeline)})
 
 
@@ -464,11 +530,74 @@ def rechazar_lote(id_lote: int, request: Request, datos: Rechazo | None = None, 
     return {"estado": "ok"}
 
 
-@admin.post("/consulta/ejecutar", summary="Consultar datos.gov.co ahora (lo mismo que hace el script diario)")
+@admin.post("/consulta/ejecutar", summary="Consultar datos.gov.co ahora: los datos nuevos quedan como un lote pendiente de revisión")
 def consultar_ahora(request: Request, sesion: dict = Depends(exigir_administrador)):
-    resultado = consultar_diario.ejecutar()
-    auditar(request, sesion["usuario"], "consulta_manual", {"resultado": resultado["estado"], "lote": resultado.get("lote")})
+    resultado = consulta_manual.ejecutar()
+    auditar(request, sesion["usuario"], "consulta_manual", {"resultado": resultado["estado"], "lote": resultado.get("lote"),
+                                                            **({"motivo": resultado["mensaje"]} if resultado["estado"] == "error" else {})})
     return a_json_seguro(resultado)
+
+
+@admin.get("/modelo/versiones", summary="Versiones del modelo con su estado, sus métricas y la decisión que se tomó")
+def versiones_del_modelo():
+    return a_json_seguro({"activa": versiones.activa(CARPETA_MODELOS), "versiones": versiones.listar()})
+
+
+@admin.get("/modelo/versiones/{version}", summary="Una versión del modelo con todos sus metadatos")
+def una_version(version: str):
+    ficha = versiones.obtener(version)
+    if ficha is None:
+        raise ErrorDeUsuario("Esa versión del modelo no existe.", 404, "VERSION_NO_EXISTE")
+    aviso = None
+    if ficha["estado"] == "candidato":
+        try:
+            aviso = recomendacion.recomendar_version(ficha["metadatos"], versiones.obtener(versiones.activa(CARPETA_MODELOS))["metadatos"])
+        except Exception:
+            aviso = None                                      # el consejo es un extra: si falla, igual se ve la versión
+    return a_json_seguro({**ficha, "recomendacion": aviso})
+
+
+@admin.get("/modelo/sugerencia", summary="¿Conviene reentrenar? Se mira cuánta información nueva hay guardada y qué tan completa es")
+def sugerencia_de_actualizacion(medir: bool = Query(False, description="Medir también cómo le va a la versión en uso con los datos nuevos (tarda unos segundos).")):
+    return a_json_seguro(actualizacion.sugerencia(pipeline_activo(), medir))
+
+
+@admin.post("/modelo/actualizar", status_code=202, summary="Reentrenar el modelo con los datos acumulados (trabaja en segundo plano)")
+def actualizar_modelo(request: Request, forzar: bool = Query(False, description="Entrenar aunque no haya datos nuevos (para pruebas)."),
+                      sesion: dict = Depends(exigir_administrador)):
+    auditar(request, sesion["usuario"], "actualizar_modelo", {"forzar": True} if forzar else {}, estricto=True)
+    try:
+        return a_json_seguro(actualizacion.iniciar(sesion["usuario"], forzar))
+    except actualizacion.ErrorDeActualizacion as error:
+        raise ErrorDeUsuario(str(error), 409, "ACTUALIZACION_EN_CURSO")
+
+
+@admin.get("/modelo/actualizacion", summary="Avance de la actualización del modelo en curso, o resultado de la última")
+def avance_de_la_actualizacion():
+    return a_json_seguro(actualizacion.estado())
+
+
+def _decidir_version(request: Request, sesion: dict, accion: str, operacion, version: str, datos: Decision) -> dict:
+    try:
+        versiones.justificada(datos.justificacion)                 # antes de anotar nada: una decisión sin motivo no se intenta
+    except versiones.ErrorDeVersion as error:
+        raise ErrorDeUsuario(str(error), 400, "JUSTIFICACION_FALTANTE")
+    auditar(request, sesion["usuario"], accion, {"version": version, "motivo": (datos.justificacion or "").strip()[:300]}, estricto=True)
+    try:
+        operacion(version, sesion["usuario"], datos.justificacion)
+    except versiones.ErrorDeVersion as error:
+        raise ErrorDeUsuario(str(error), 409, "DECISION_NO_VALIDA")
+    return a_json_seguro({"activa": versiones.activa(CARPETA_MODELOS), "versiones": versiones.listar()})
+
+
+@admin.post("/modelo/versiones/{version}/activar", summary="Poner una versión en uso (la que estaba en uso queda como histórica)")
+def activar_version(version: str, datos: Decision, request: Request, sesion: dict = Depends(exigir_administrador)):
+    return _decidir_version(request, sesion, "activar_version", versiones.activar, version, datos)
+
+
+@admin.post("/modelo/versiones/{version}/descartar", summary="Descartar una versión candidata: no entra en uso y queda como histórica")
+def descartar_version(version: str, datos: Decision, request: Request, sesion: dict = Depends(exigir_administrador)):
+    return _decidir_version(request, sesion, "descartar_version", versiones.descartar, version, datos)
 
 
 @admin.get("/actividad", summary="Registro de auditoría: quién hizo qué")

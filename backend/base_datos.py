@@ -1,6 +1,6 @@
 """Conexión a MySQL (XAMPP/MariaDB en el computador; TiDB, Aiven u otro en la nube) y creación de las tablas del sistema.
 
-Guarda todo lo que debe permanecer: usuarios, sesiones, auditoría, lotes de datos nuevos y las lecturas publicadas del río.
+Guarda todo lo que debe permanecer: usuarios, sesiones, auditoría, lotes de datos nuevos, las lecturas publicadas del río y las versiones del modelo.
 
 Datos de conexión (variables de entorno o archivo backend/.env, una línea «NOMBRE=valor»):
     SEMAFORO_BD_HOST (127.0.0.1)   SEMAFORO_BD_PUERTO (3307)   SEMAFORO_BD_USUARIO (root)
@@ -17,6 +17,25 @@ from pathlib import Path
 import pymysql
 from pymysql.cursors import DictCursor
 
+TABLAS_MODELOS = [                                # las usa versiones.py, que también las crea sola la primera vez
+    """CREATE TABLE IF NOT EXISTS modelos (
+        version VARCHAR(10) PRIMARY KEY,
+        estado VARCHAR(10) NOT NULL,
+        creado DATETIME NOT NULL,
+        metadatos LONGTEXT NOT NULL,
+        decidido_por VARCHAR(30) NULL,
+        decidido_en DATETIME NULL,
+        justificacion VARCHAR(500) NULL,
+        decision VARCHAR(10) NULL,
+        INDEX (estado)
+    ) DEFAULT CHARSET=utf8mb4""",
+    """CREATE TABLE IF NOT EXISTS modelo_trozos (
+        version VARCHAR(10) NOT NULL,
+        parte INT NOT NULL,
+        datos MEDIUMBLOB NOT NULL,
+        PRIMARY KEY (version, parte)
+    ) DEFAULT CHARSET=utf8mb4""",
+]
 TABLAS = [
     """CREATE TABLE IF NOT EXISTS usuarios (
         usuario VARCHAR(30) PRIMARY KEY,
@@ -45,6 +64,7 @@ TABLAS = [
         resumen LONGTEXT NULL,
         archivo VARCHAR(80) NOT NULL DEFAULT '',
         datos LONGTEXT NULL,
+        marcas LONGTEXT NULL,
         decidido_por VARCHAR(30) NULL,
         decidido_en DATETIME NULL,
         INDEX (estado)
@@ -66,7 +86,7 @@ TABLAS = [
         ip VARCHAR(45) NULL,
         INDEX (fecha), INDEX (usuario), INDEX (accion)
     ) DEFAULT CHARSET=utf8mb4""",
-]
+] + TABLAS_MODELOS
 COLUMNA_QUE_FALTABA_EN_LOTES = "ALTER TABLE lotes ADD COLUMN datos LONGTEXT NULL"      # bases creadas antes de guardar los datos del lote aquí
 ERROR_COLUMNA_REPETIDA = 1060
 
@@ -143,4 +163,4 @@ def crear_tablas(prefijo: str = "SEMAFORO_BD") -> str:
 
 
 if __name__ == "__main__":
-    print(f"Base «{crear_tablas()}» lista: tablas usuarios, sesiones, lotes, lecturas y auditoria.")
+    print(f"Base «{crear_tablas()}» lista: tablas usuarios, sesiones, lotes, lecturas, auditoria, modelos y modelo_trozos.")

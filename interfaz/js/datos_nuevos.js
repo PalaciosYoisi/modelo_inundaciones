@@ -1,4 +1,4 @@
-// Consulta diaria: los lotes de datos nuevos de datos.gov.co que el administrador revisa antes de enviarlos al modelo.
+// Datos nuevos: los lotes de datos.gov.co (consultados con el botón o armados con archivos) que el administrador revisa antes de enviarlos al modelo.
 import * as api from "./api.js";
 import { fecha, guardarArchivo, h, icono, numero, reemplazar } from "./dom.js";
 import { graficaLinea } from "./grafica.js";
@@ -28,6 +28,7 @@ export function iniciarConsulta({ alVencer, alCambiar, alRevisar }) {
   let estacion = null;
   let forma = "graficas";
   let pregunta = null;                              // «confirmar» o «rechazar» mientras se espera el sí
+  let conservar = new Set();                        // los grupos de lecturas marcadas que la persona decide conservar (por defecto, ninguno)
   const nombreDe = (codigo) => nombres[codigo] ?? codigo;
   const falla = (error) => { if (error.estado === 401) alVencer(); return error.message; };
 
@@ -51,7 +52,7 @@ export function iniciarConsulta({ alVencer, alCambiar, alRevisar }) {
 
   // ---------------------------------------------------------------- Lista de lotes
   function tablaLotes(lista) {
-    if (!lista.length) return h("p", { clase: "vacio" }, "Todavía no hay consultas. Use «Consultar ahora» o programe la consulta diaria.");
+    if (!lista.length) return h("p", { clase: "vacio" }, "Todavía no hay datos nuevos. Use «Consultar ahora» para traer los más recientes.");
     const fila = (l) => h("tr", {},
       h("td", {}, h("b", {}, `Lote ${l.id}`)), h("td", {}, fecha(l.creado)), h("td", {}, l.origen === "archivo" ? "Archivos subidos" : "datos.gov.co"),
       h("td", {}, h("span", { clase: `etiqueta etiqueta--${ESTADOS[l.estado]?.clase ?? "gris"}` }, ESTADOS[l.estado]?.texto ?? l.estado)),
@@ -87,6 +88,7 @@ export function iniciarConsulta({ alVencer, alCambiar, alRevisar }) {
       return;
     }
     pregunta = null;
+    conservar = new Set();
     estacion = abierto.resumen.por_estacion?.[0]?.estacion ?? null;
     $("cons-detalle").hidden = false;
     pintar();
@@ -130,8 +132,80 @@ export function iniciarConsulta({ alVencer, alCambiar, alRevisar }) {
     return h("p", { clase: "nota-suave" }, partes.length ? `El sistema descartó automáticamente: ${partes.join(", ")}.` : "El sistema no tuvo que descartar ninguna lectura.");
   }
 
+  // Lo que el sistema propone no usar: se muestra antes de decidir, con su justificación (y lo que se decidió, si el lote ya se confirmó)
+  const tituloDe = (motivo) => abierto.resumen.marcas?.find((g) => g.motivo === motivo)?.titulo ?? motivo;
+
+  async function pintarLecturas(id, grupo, contenedor) {
+    try {
+      const { total, marcas } = await api.marcasDelLote(id, grupo.motivo);
+      reemplazar(contenedor,
+        h("div", { clase: "tabla tabla--alta" }, h("table", {},
+          h("thead", {}, h("tr", {}, ["Estación o pluviómetro", "Fecha y hora", "Valor que llegó", "Detalle"].map((t, i) => h("th", { clase: i === 2 ? "num" : null }, t)))),
+          h("tbody", {}, marcas.map((m) => h("tr", {}, h("td", {}, nombreDe(m.estacion)), h("td", {}, fecha(m.fecha_hora)),
+            h("td", { clase: "num" }, `${numero(m.valor, m.variable === "lluvia" ? 1 : 2)} ${m.variable === "lluvia" ? "mm" : "m"}`), h("td", {}, m.detalle || "—")))))),
+        total > marcas.length ? h("p", { clase: "nota-suave" }, `Se muestran las primeras ${numero(marcas.length)} de ${numero(total)}. Descargue el CSV para verlas todas.`) : null);
+    } catch (error) {
+      reemplazar(contenedor, h("p", { clase: "vacio" }, falla(error)));
+    }
+  }
+
+  function grupoDeMarcas(l, g, decidido) {
+    const detalle = h("div", { hidden: true });
+    let cargado = false;
+    const ver = h("button", { clase: "boton-texto", type: "button", onclick: async () => {
+      detalle.hidden = !detalle.hidden;
+      ver.textContent = detalle.hidden ? "Ver las lecturas" : "Ocultar las lecturas";
+      if (!detalle.hidden && !cargado) { cargado = true; await pintarLecturas(l.id, g, detalle); }
+    } }, "Ver las lecturas");
+    const decision = decidido
+      ? h("span", { clase: `etiqueta etiqueta--${decidido.decision === "conservadas" ? "verde" : "gris"}` }, decidido.decision === "conservadas" ? "Se conservaron" : "Se excluyeron")
+      : l.estado !== "pendiente" ? null
+        : g.conservable
+          ? h("label", { clase: "conservar" }, h("input", { type: "checkbox", checked: conservar.has(g.motivo), onchange: (ev) => { if (ev.target.checked) conservar.add(g.motivo); else conservar.delete(g.motivo); } }),
+            "Quiero conservarlas (el sistema recomienda no usarlas)")
+          : h("span", { clase: "etiqueta etiqueta--gris" }, "Se excluyen siempre");
+    return h("article", { clase: "marca-grupo" },
+      h("div", { clase: "marca-grupo__cabecera" }, h("b", {}, g.titulo), h("span", {}, `${numero(g.lecturas)} ${g.lecturas === 1 ? "lectura" : "lecturas"}, ${numero(g.marcas)} ${g.marcas === 1 ? "marca" : "marcas"}`), decision),
+      h("p", {}, g.justificacion), ver, detalle);
+  }
+
+  function lecturasMarcadas(l) {
+    const r = l.resumen;
+    if (!r.marcas?.length) return descartes(r.descartes);          // los lotes anteriores a las marcas solo conservan el conteo
+    return [h("h3", {}, "Lecturas que el sistema propone no usar"),
+      h("p", { clase: "tarjeta__texto" }, l.estado === "pendiente"
+        ? "No se borra nada: aquí ve cada grupo con su motivo y puede revisar las lecturas una por una. Las que son imposibles se excluyen siempre; en las demás usted decide."
+        : "Esto es lo que se hizo con las lecturas marcadas de este lote."),
+      h("div", { clase: "marcas" }, r.marcas.map((g) => grupoDeMarcas(l, g, r.decision_de_lecturas?.[g.motivo]))),
+      h("p", {}, h("button", { clase: "boton-texto", type: "button", onclick: descargarMarcas }, "Descargar las lecturas marcadas (CSV)"))];
+  }
+
+  // Todas las horas del lote para la estación elegida; las que tienen una lectura marcada se resaltan
+  async function mostrarHoras(caja, pagina = 0, previas = []) {
+    try {
+      const d = await api.horasDelLote(abierto.id, estacion, pagina);
+      const filas = [...previas, ...d.filas];
+      reemplazar(caja,
+        h("div", { clase: "tabla tabla--alta" }, h("table", {},
+          h("thead", {}, h("tr", {}, ["Fecha y hora", "Nivel del río (m)", "Lluvia (mm)", "Observación"].map((t, i) => h("th", { clase: i === 1 || i === 2 ? "num" : null }, t)))),
+          h("tbody", {}, filas.map((f) => h("tr", { clase: f.marca ? "fila-marcada" : null }, h("td", {}, fecha(f.fecha_hora)),
+            h("td", { clase: "num" }, f.nivel_m === null ? "—" : numero(f.nivel_m, 2)), h("td", { clase: "num" }, f.lluvia_mm === null ? "—" : numero(f.lluvia_mm, 1)),
+            h("td", {}, f.marca ? tituloDe(f.marca) : "")))))),
+        filas.length < d.total
+          ? h("p", {}, h("button", { clase: "boton boton--contorno-oscuro boton--pequeno", type: "button", onclick: () => mostrarHoras(caja, pagina + 1, filas) }, `Ver más (${numero(filas.length)} de ${numero(d.total)})`))
+          : h("p", { clase: "nota-suave" }, `${numero(d.total)} horas en total.`));
+    } catch (error) {
+      reemplazar(caja, h("p", { clase: "vacio" }, falla(error)));
+    }
+  }
+
   function datosDeEstacion() {
     const filas = abierto.diario.filter((d) => d.estacion === estacion);
+    if (forma === "horas") {
+      const caja = h("div", {}, h("p", { clase: "vacio" }, "Cargando…"));
+      mostrarHoras(caja);
+      return caja;
+    }
     if (forma === "tabla") {
       return h("div", { clase: "tabla tabla--alta" }, h("table", {},
         h("thead", {}, h("tr", {}, h("th", {}, "Día"), h("th", { clase: "num" }, "Nivel del río (m)"), h("th", { clase: "num" }, "Lluvia del día (mm)"), h("th", { clase: "num" }, "Horas con datos"))),
@@ -151,8 +225,12 @@ export function iniciarConsulta({ alVencer, alCambiar, alRevisar }) {
       const aconsejo = l.recomendacion?.accion;
       const contra = pregunta === "confirmar" && aconsejo === "rechazar" ? " El sistema recomendaba rechazarlo." : pregunta === "rechazar" && aconsejo === "confirmar" ? " El sistema recomendaba agregarlo." : "";
       const motivoInicial = aconsejo === "rechazar" ? `Información débil. ${l.recomendacion.razones.filter((x) => x.tipo === "contra").map((x) => x.texto).join(" ")}` : "";
+      const grupos = l.resumen.marcas ?? [];
+      const queda = grupos.filter((g) => g.conservable && conservar.has(g.motivo)), sale = grupos.filter((g) => !queda.includes(g));
+      const lecturas = (lista) => lista.map((g) => `${numero(g.lecturas)} de ${g.titulo.toLowerCase()}`).join(", ");
       const texto = pregunta === "confirmar"
-        ? `Se agregarán ${numero(nuevas)} horas nuevas, se completarán ${numero(actualizadas)} y los semáforos que ve el público se actualizarán. ¿Confirma?`
+        ? `Se agregarán ${numero(nuevas)} horas nuevas, se completarán ${numero(actualizadas)} y los semáforos que ve el público se actualizarán.`
+          + (sale.length ? ` Se excluirán lecturas marcadas: ${lecturas(sale)}.` : "") + (queda.length ? ` Se conservarán: ${lecturas(queda)}.` : "") + " Todo quedará registrado con su justificación. ¿Confirma?"
         : "El lote se descartará y no llegará al modelo. Cuente por qué, para que quede en el registro. ¿Lo rechaza?";
       return h("div", { clase: "confirmar", role: "alert" }, h("p", {}, texto + contra + (l.resumen.combina?.length ? " Recuerde que este lote combina varias consultas." : "")),
         pregunta === "rechazar" ? h("textarea", { id: "cons-motivo", clase: "motivo", rows: 3, maxlength: 300, "aria-label": "Motivo del rechazo", placeholder: "Motivo del rechazo (opcional)" }, motivoInicial) : null,
@@ -176,7 +254,7 @@ export function iniciarConsulta({ alVencer, alCambiar, alRevisar }) {
     const selector = h("select", { id: "cons-estacion", onchange: (ev) => { estacion = ev.target.value; pintarZona(); } },
       porEstacion.map((x) => h("option", { value: x.estacion, selected: x.estacion === estacion }, nombreDe(x.estacion))));
     const botones = {};
-    for (const [clave, texto] of [["graficas", "Ver gráficas"], ["tabla", "Ver tabla"]]) {
+    for (const [clave, texto] of [["graficas", "Ver gráficas"], ["tabla", "Ver tabla por día"], ["horas", "Ver todas las horas"]]) {
       botones[clave] = h("button", { type: "button", "aria-pressed": String(clave === forma), onclick: () => {
         forma = clave;
         Object.entries(botones).forEach(([k, b]) => b.setAttribute("aria-pressed", String(k === forma)));
@@ -196,7 +274,7 @@ export function iniciarConsulta({ alVencer, alCambiar, alRevisar }) {
       recomendacion(l.recomendacion),
       combinado(r.combina),
       h("p", {}, `Periodo: ${fecha(l.desde, false)} a ${fecha(l.hasta, false)}. ${origenDe(l)}`),
-      h("h3", {}, "Revisión automática"), hallazgos(r.validacion?.hallazgos), descartes(r.descartes),
+      h("h3", {}, "Revisión automática"), hallazgos(r.validacion?.hallazgos), lecturasMarcadas(l),
       r.estaciones_sin_datos?.length ? h("p", { clase: "nota-suave" }, `Sin datos nuevos en: ${r.estaciones_sin_datos.map(nombreDe).join(", ")}.`) : null,
       h("h3", {}, "Datos por estación"),
       h("div", { clase: "lote-estacion" }, h("label", { for: "cons-estacion" }, "Estación"), selector, h("div", { clase: "conmutador", role: "group", "aria-label": "Forma de ver los datos" }, Object.values(botones))),
@@ -211,13 +289,26 @@ export function iniciarConsulta({ alVencer, alCambiar, alRevisar }) {
     pregunta = null;
     aviso("cargando", que === "confirmar" ? "Enviando los datos al modelo…" : "Rechazando el lote…");
     try {
-      if (que === "confirmar") { await api.confirmarLote(id); aviso("info", "Lote confirmado. Los semáforos que ve el público ya se actualizaron."); alCambiar(); }
+      if (que === "confirmar") {
+        await api.confirmarLote(id, [...conservar]);
+        alCambiar();
+        const consejo = await api.sugerenciaDeActualizacion().then((s) => ` Sobre reentrenar: ${s.titulo.toLowerCase()}.`, () => "");   // un extra: si falla, no estorba
+        aviso("info", `Lote confirmado. Los semáforos que ve el público ya se actualizaron.${consejo}`);
+      }
       else { await api.rechazarLote(id, motivo); aviso("info", "Lote rechazado. No llegó al modelo."); }
     } catch (error) {
       aviso("error", falla(error));
     }
     await cargar();
     await abrir(id);
+  }
+
+  async function descargarMarcas() {
+    try {
+      guardarArchivo(await api.descargarMarcas(abierto.id), `lote_${abierto.id}_lecturas_marcadas.csv`);
+    } catch (error) {
+      aviso("error", falla(error));
+    }
   }
 
   async function descargar() {
