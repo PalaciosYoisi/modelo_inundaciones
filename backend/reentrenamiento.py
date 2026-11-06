@@ -5,17 +5,22 @@ Calcula las variables con el mismo código que usa el sitio (pipeline.py), así 
 """
 
 from pathlib import Path
+from typing import Callable
 
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 
-from pipeline import GRILLA, ParametrosModelo, columna_estacion, variables_estacion
+from pipeline import GRILLA, ParametrosModelo, columna_estacion, probabilidades, semaforo_desde, variables_estacion
 
 COLUMNAS = ["estacion", "fecha_hora", "nivel_m", "lluvia_mm"]
 LLAVES = ["estacion", "fecha_hora"]
 MINIMO_NIVELES = 100              # con menos lecturas de nivel no se puede fijar la regla del percentil de una estación
+MINIMO_MOMENTOS = 24              # con menos horas nuevas no tiene sentido medir al modelo en uso
+REGLAS = ["Regla: nivel de hoy", "Regla: máximo de 24 h"]
+BOSQUE = "Bosque aleatorio"
+Avance = Callable[[str, float], None]         # recibe la etapa en curso y qué parte va hecha (de 0 a 1)
 
 
 class ErrorDeReentrenamiento(Exception):
@@ -98,3 +103,63 @@ def medir(real, predicho) -> dict:
         "Rojos no detectados": int((r & ~p).sum()),
         "Falsas alarmas": int((~r & p).sum()),
     }
+
+
+# ------------------------------------------------------------------ validación
+def _avisar(avance: Avance | None, etapa: str, fraccion: float) -> None:
+    if avance:
+        avance(etapa, fraccion)
+
+
+def validar_por_bloques(datos: pd.DataFrame, metadatos: dict, avance: Avance | None = None) -> dict:
+    """Divide el tiempo en 6 bloques y, para cada uno de los últimos cuatro, entrena con todo lo anterior y prueba con ese bloque.
+
+    La regla del percentil y las escalas se calculan solo con el pasado y se deja un margen de 24 horas entre el entrenamiento y la prueba,
+    para que el modelo no vea horas casi idénticas a la que debe adivinar. Compara el bosque con dos reglas simples que no aprenden nada.
+    """
+    parametros = ParametrosModelo.desde_metadatos(metadatos)
+    codigos, columnas = list(metadatos["estaciones"]), metadatos["variables_modelo"]
+    horas = np.sort(datos.loc[datos["nivel_m"].notna(), "fecha_hora"].unique())
+    cortes = [pd.Timestamp(horas[int(len(horas) * q)]) for q in (2 / 6, 3 / 6, 4 / 6, 5 / 6)]
+    cortes.append(datos["fecha_hora"].max() + pd.Timedelta(hours=1))
+    evaluaciones, bloques = [], []
+    for k in range(4):
+        _avisar(avance, "validación por bloques de tiempo", k / 4)
+        inicio, fin = cortes[k], cortes[k + 1]
+        referencias, escalas = referencias_y_escalas(datos[datos["fecha_hora"] < inicio])
+        if not referencias:
+            continue
+        t = construir(datos, referencias, escalas, codigos, parametros).dropna(subset=["nivel_percentil", "objetivo_percentil"])
+        t = t[t.index.hour % parametros.paso_horas == 0]
+        entrenamiento = t[t.index < inicio - pd.Timedelta(hours=parametros.horizonte_h)]
+        prueba = t[(t.index >= inicio) & (t.index < fin)]
+        if len(prueba) == 0 or len(entrenamiento) < 200:
+            continue
+        modelo = crear_modelo(metadatos["configuracion"]).fit(entrenamiento[columnas], entrenamiento["color_objetivo"])
+        proba = probabilidades(modelo, prueba[columnas])
+        evaluaciones.append(pd.DataFrame({
+            "real": prueba["color_objetivo"].values,
+            REGLAS[0]: color_de_percentil(prueba["nivel_percentil"].values, parametros),
+            REGLAS[1]: color_de_percentil(prueba["max_24h"].values, parametros),
+            BOSQUE: semaforo_desde(proba, parametros.umbral_prob_rojo)}))
+        bloques.append({"bloque": k + 1, "desde": str(inicio), "hasta": str(fin), "momentos": len(prueba)})
+    if not evaluaciones:
+        raise ErrorDeReentrenamiento("Todavía no hay datos suficientes para validar el modelo por bloques de tiempo.")
+    todas = pd.concat(evaluaciones, ignore_index=True)
+    metricas = pd.DataFrame({nombre: medir(todas["real"], todas[nombre]) for nombre in REGLAS + [BOSQUE]}).T
+    _avisar(avance, "validación por bloques de tiempo", 1.0)
+    return {"momentos": len(todas), "con_rojo": int((todas["real"] == 2).sum()), "bloques": bloques,
+            "metricas": metricas.round(3).to_dict(orient="index")}
+
+
+def evaluar_modelo_actual(datos: pd.DataFrame, metadatos: dict, modelo, desde: pd.Timestamp) -> dict | None:
+    """Cómo le va al modelo en uso con las horas posteriores a `desde`, que nunca vio al entrenarse. None si son muy pocas."""
+    parametros = ParametrosModelo.desde_metadatos(metadatos)
+    referencias = {e: np.array(v) for e, v in metadatos["referencia_percentil"]["niveles_m"].items()}
+    escalas = {e: v["escala_nivel_m"] for e, v in metadatos["estaciones"].items()}
+    t = construir(datos, referencias, escalas, list(metadatos["estaciones"]), parametros).dropna(subset=["nivel_percentil", "objetivo_percentil"])
+    t = t[t.index > desde]
+    if len(t) < MINIMO_MOMENTOS:
+        return None
+    predicho = semaforo_desde(probabilidades(modelo, t[metadatos["variables_modelo"]]), parametros.umbral_prob_rojo)
+    return {"momentos": len(t), "con_rojo": int((t["color_objetivo"] == 2).sum()), **medir(t["color_objetivo"], predicho)}
