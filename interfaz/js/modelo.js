@@ -1,6 +1,6 @@
 // Actualizar el modelo: entrenar una versión nueva con todos los datos, seguir su avance, compararla con la que está en uso y decidir.
 import * as api from "./api.js";
-import { fecha, h, icono, numero, porcentaje, reemplazar } from "./dom.js";
+import { fecha, guardarArchivo, h, icono, numero, porcentaje, reemplazar } from "./dom.js";
 
 const $ = (id) => document.getElementById(id);
 const ESTADOS = { activo: ["En uso", "verde"], candidato: ["Por decidir", "amarillo"], historico: ["Anterior", "gris"], descartada: ["Descartada", "gris"] };
@@ -269,9 +269,18 @@ export function iniciarModelo({ alVencer, alCambiar }) {
         placeholder: aconseja === "mantener" ? "Por ejemplo: no mejora el puntaje del rojo con los datos disponibles." : "Por ejemplo: mejora el puntaje del rojo con los datos de las últimas semanas." }),
       h("div", { clase: "acciones-lote" },
         ponerEnUso(claseDe("activar")), candidata ? descartar(claseDe("descartar")) : null,
+        h("button", { clase: "boton-texto", type: "button", onclick: () => descargarReporte(elegida.version) }, "Descargar el reporte de actualización"),
         h("button", { clase: "boton-texto", type: "button", onclick: () => { $("mod-detalle").hidden = true; } }, "Cerrar")),
       h("p", { clase: "tarjeta__texto", style: "margin:1rem 0 0" }, "Al poner una versión en uso, los semáforos que ve el público se calculan con ella. La que estaba en uso se conserva como anterior y se puede volver a usar. Si tiene dudas, mantenga la versión en uso."),
       h("div", { id: "mod-detalle-aviso", clase: "aviso", hidden: true })];
+  }
+
+  async function descargarReporte(version) {
+    try {
+      guardarArchivo(await api.reporteDeActualizacion(activa, version), `reporte_actualizacion_${version}.html`);
+    } catch (error) {
+      aviso("error", falla(error), "mod-detalle-aviso");
+    }
   }
 
   async function abrir(version) {

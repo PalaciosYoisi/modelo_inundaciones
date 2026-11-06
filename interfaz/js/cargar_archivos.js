@@ -1,17 +1,19 @@
 // Carga de archivos: se suben los CSV de datos.gov.co (o uno ya combinado), el sistema reconoce y revisa cada uno y los unifica en un lote.
 import * as api from "./api.js";
-import { fecha, h, icono, numero, reemplazar } from "./dom.js";
+import { fecha, guardarArchivo, h, icono, numero, reemplazar } from "./dom.js";
 import { vistaAnalisis } from "./vistas_admin.js";
 
 const $ = (id) => document.getElementById(id);
 const tamano = (bytes) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`);
 const ICONO = { ok: "check", advertencias: "aviso", error: "cruz" };
 const ETIQUETA = { ok: "verde", advertencias: "amarillo", error: "rojo" };
+const REPORTES = { compatibilidad: "de compatibilidad", eda: "del análisis de los datos", predicciones: "de predicciones" };
 
 export function iniciarCarga({ alVencer, alLoteCreado, alRevisar }) {
   let archivos = [];
   let nombres = {};
   const botones = { revisar: $("adm-revisar"), analizar: $("adm-analizar"), crear: $("adm-crear") };
+  const botonesDeReporte = { compatibilidad: $("adm-rep-compat"), eda: $("adm-rep-eda"), predicciones: $("adm-rep-pred") };
   const falla = (error) => { if (error.estado === 401) alVencer(); return error.message ?? "Ocurrió un error inesperado."; };
 
   function aviso(tipo, mensaje) {
@@ -27,6 +29,38 @@ export function iniciarCarga({ alVencer, alLoteCreado, alRevisar }) {
     $("adm-analisis").hidden = true;
   }
 
+  // ---------------------------------------------------------------- Reportes del archivo elegido
+  function avisoDeReporte(tipo, mensaje) {
+    const caja = $("adm-rep-aviso");
+    caja.className = `aviso aviso--${tipo}`;
+    reemplazar(caja, tipo === "error" ? icono("aviso") : null, h("p", { style: "margin:0" }, mensaje));
+    caja.hidden = false;
+  }
+
+  function pintarReportes() {
+    const lista = $("adm-reporte-archivo"), elegido = lista.value;
+    reemplazar(lista, archivos.map((a) => h("option", { value: a.name }, a.name)));
+    if (archivos.some((a) => a.name === elegido)) lista.value = elegido;
+    $("adm-reportes").hidden = !archivos.length;
+    if (!archivos.length) $("adm-rep-aviso").hidden = true;
+  }
+
+  async function descargarReporte(tipo) {
+    const archivo = archivos.find((a) => a.name === $("adm-reporte-archivo").value);
+    if (!archivo) return;
+    Object.values(botonesDeReporte).forEach((b) => { b.disabled = true; });
+    avisoDeReporte("cargando", `Preparando el reporte ${REPORTES[tipo]}…`);
+    try {
+      guardarArchivo(await api.reporte(tipo, archivo), `reporte_${tipo}_${archivo.name.replace(/\.[^.]+$/, "").replace(/[^\w-]+/g, "_")}.html`);
+      avisoDeReporte("info", "El reporte se descargó. Ábralo en el navegador: desde allí también se puede imprimir o guardar como PDF.");
+    } catch (error) {
+      avisoDeReporte("error", falla(error));
+    } finally {
+      Object.values(botonesDeReporte).forEach((b) => { b.disabled = false; });
+    }
+  }
+  for (const [tipo, boton] of Object.entries(botonesDeReporte)) boton.addEventListener("click", () => descargarReporte(tipo));
+
   // ---------------------------------------------------------------- Archivos elegidos
   function pintarLista() {
     reemplazar($("adm-archivos"), archivos.map((a, i) => h("li", {},
@@ -35,6 +69,7 @@ export function iniciarCarga({ alVencer, alLoteCreado, alRevisar }) {
     $("adm-archivos").hidden = !archivos.length;
     botones.revisar.disabled = botones.crear.disabled = !archivos.length;
     botones.analizar.disabled = archivos.length !== 1;
+    pintarReportes();
   }
 
   function agregar(lista) {
