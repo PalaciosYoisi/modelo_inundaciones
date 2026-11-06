@@ -350,6 +350,101 @@ def predecir(request: Request, archivo: UploadFile = File(..., description="CSV 
                           "total_predicciones": len(salida), "predicciones": salida.head(limite)})
 
 
+# ------------------------------------------------------------------ reportes descargables
+def _descarga_html(contenido: str, nombre: str) -> Response:
+    return Response(content=contenido.encode("utf-8"), media_type="text/html; charset=utf-8", headers={"Content-Disposition": f'attachment; filename="{nombre}"'})
+
+
+@admin.post("/reportes/compatibilidad", summary="Reporte de compatibilidad de un archivo con el modelo (HTML descargable)")
+def reporte_de_compatibilidad(request: Request, archivo: UploadFile = File(..., description="CSV o Excel a revisar."), sesion: dict = Depends(exigir_administrador)):
+    tabla, nombre = leer_archivo(archivo)
+    pipeline = pipeline_activo()
+    diagnostico = validar(tabla, pipeline.metadatos)
+    auditar(request, sesion["usuario"], "descargar_reporte", {"tipo": "compatibilidad", "archivo": nombre, "estado": diagnostico["estado"]})
+    return _descarga_html(reportes.reporte_compatibilidad(diagnostico, nombre, pipeline.version), reportes.nombre_de_reporte("compatibilidad", nombre))
+
+
+@admin.post("/reportes/eda", summary="Reporte del análisis exploratorio de cualquier archivo (HTML descargable)")
+def reporte_de_eda(request: Request, archivo: UploadFile = File(..., description="Cualquier CSV o Excel."), sesion: dict = Depends(exigir_administrador)):
+    tabla, nombre = leer_archivo(archivo)
+    resultado, figuras = analizar(tabla, nombre)
+    auditar(request, sesion["usuario"], "descargar_reporte", {"tipo": "análisis de los datos", "archivo": nombre})
+    return _descarga_html(reportes.reporte_eda(resultado, figuras, nombre), reportes.nombre_de_reporte("eda", nombre))
+
+
+@admin.post("/reportes/predicciones", summary="Reporte de predicciones de un archivo compatible (HTML descargable)",
+            responses={422: {"description": "El archivo no es compatible con el modelo; el cuerpo trae el diagnóstico."}})
+def reporte_de_predicciones(request: Request, archivo: UploadFile = File(..., description="CSV o Excel con las columnas del esquema del modelo."),
+                            sesion: dict = Depends(exigir_administrador)):
+    tabla, nombre = leer_archivo(archivo)
+    pipeline = pipeline_activo()
+    diagnostico = validar(tabla, pipeline.metadatos)
+    if not diagnostico["puede_predecir"]:
+        raise ErrorDeUsuario("El archivo no es compatible con el modelo, por eso no se generaron predicciones. Descargue el reporte de compatibilidad, "
+                             "corrija el archivo y cárguelo de nuevo.", 422, "ARCHIVO_INCOMPATIBLE", {"diagnostico": diagnostico})
+    predicciones = pipeline.predecir(tabla)
+    auditar(request, sesion["usuario"], "descargar_reporte", {"tipo": "predicciones", "archivo": nombre, "filas": len(tabla)})
+    return _descarga_html(reportes.reporte_predicciones(pipeline.tabla_de_salida(predicciones), pipeline.resumen(predicciones, 48), nombre, pipeline.version, diagnostico),
+                          reportes.nombre_de_reporte("predicciones", nombre))
+
+
+@admin.get("/reportes/actualizacion", summary="Reporte de actualización del modelo: una versión candidata frente a la que estaba en uso (HTML descargable)")
+def reporte_de_actualizacion(request: Request, candidata: str = Query(..., description="La versión nueva, por ejemplo v4."),
+                             anterior: str | None = Query(None, description="La versión con la que se compara; si no se indica, la que está en uso."),
+                             sesion: dict = Depends(exigir_administrador)):
+    anterior = anterior or versiones.activa(CARPETA_MODELOS)
+    nueva, vieja = versiones.obtener(candidata), versiones.obtener(anterior)
+    if nueva is None or vieja is None:
+        raise ErrorDeUsuario("Esa versión del modelo no existe.", 404, "VERSION_NO_EXISTE")
+    consejo = None
+    if nueva["estado"] == "candidato":
+        try:                                  # el consejo es un extra: si falla, el reporte sale igual
+            consejo = recomendacion.recomendar_version(nueva["metadatos"], vieja["metadatos"])
+        except Exception:
+            consejo = None
+    auditar(request, sesion["usuario"], "descargar_reporte", {"tipo": "actualización del modelo", "version": candidata})
+    return _descarga_html(reportes.reporte_actualizacion(vieja, nueva, consejo), f"reporte_actualizacion_{nueva['version']}_frente_a_{vieja['version']}.html")
+
+
+@admin.get("/reportes/{tipo}", summary="Reporte de compatibilidad, análisis o predicciones de los datos que ya están en el sistema (HTML descargable)",
+           responses={422: {"description": "Los datos no son compatibles con el modelo (solo para predicciones)."}})
+def reporte_de_datos_guardados(tipo: Literal["compatibilidad", "eda", "predicciones"], request: Request,
+                               fuente: Literal["publicados", "lote"] = Query("publicados", description="publicados: los datos que usa el modelo. lote: un lote de datos nuevos."),
+                               lote: int | None = Query(None, description="Número del lote, cuando la fuente es un lote."),
+                               formato: Literal["html", "csv"] = Query("html", description="csv: todas las predicciones de cada registro (solo para predicciones)."),
+                               sesion: dict = Depends(exigir_administrador)):
+    pipeline = pipeline_activo()
+    if fuente == "lote":
+        if lote is None:
+            raise ErrorDeUsuario("Elija el lote del que quiere el reporte.", 400, "LOTE_SIN_ELEGIR")
+        _lote(lote)
+        tabla, nombre = _datos_del_lote(lote), f"Lote {lote}"
+    else:                                     # para predecir solo se usan las horas recientes, que son las que alimentan el semáforo
+        tabla, nombre = publicacion().tabla(pipeline.codigos, completa=tipo != "predicciones"), "Datos publicados"
+    tabla = pd.read_csv(io.StringIO(tabla.to_csv(index=False)), dtype=str)      # como llegaría de un archivo: texto sin interpretar
+    detalle = {"tipo": {"eda": "análisis de los datos"}.get(tipo, tipo), "fuente": nombre, "filas": len(tabla)}
+    if tipo == "eda":
+        resultado, figuras = analizar(tabla, nombre)
+        auditar(request, sesion["usuario"], "descargar_reporte", detalle)
+        return _descarga_html(reportes.reporte_eda(resultado, figuras, nombre), reportes.nombre_de_reporte("eda", nombre))
+    diagnostico = validar(tabla, pipeline.metadatos)
+    if tipo == "compatibilidad":
+        auditar(request, sesion["usuario"], "descargar_reporte", {**detalle, "estado": diagnostico["estado"]})
+        return _descarga_html(reportes.reporte_compatibilidad(diagnostico, nombre, pipeline.version), reportes.nombre_de_reporte("compatibilidad", nombre))
+    if not diagnostico["puede_predecir"]:
+        raise ErrorDeUsuario("Estos datos no son compatibles con el modelo, por eso no se generaron predicciones. Vea el reporte de compatibilidad.",
+                             422, "ARCHIVO_INCOMPATIBLE", {"diagnostico": diagnostico})
+    predicciones = pipeline.predecir(tabla)
+    if formato == "csv":
+        salida = pipeline.tabla_de_salida(predicciones)
+        auditar(request, sesion["usuario"], "descargar_predicciones", {"fuente": nombre, "filas": len(salida)})
+        return Response(content=salida.to_csv(index=False).encode("utf-8-sig"), media_type="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="predicciones_{nombre.lower().replace(" ", "_")}.csv"'})
+    auditar(request, sesion["usuario"], "descargar_reporte", detalle)
+    return _descarga_html(reportes.reporte_predicciones(pipeline.tabla_de_salida(predicciones), pipeline.resumen(predicciones, 48), nombre, pipeline.version, diagnostico),
+                          reportes.nombre_de_reporte("predicciones", nombre))
+
+
 @admin.post("/archivos", summary="Subir uno o varios archivos de datos: se reconoce y revisa cada uno y se unifican en un lote pendiente",
             responses={200: {"description": "Los informes por archivo y, si todo sirve y se pidió, el lote creado."}})
 def subir_archivos(request: Request, archivos: list[UploadFile] = File(..., description="CSV de nivel y de lluvia de datos.gov.co, o un archivo ya combinado."),
