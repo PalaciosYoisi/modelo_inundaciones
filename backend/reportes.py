@@ -263,3 +263,56 @@ def reporte_eda(resultado: dict, figuras: list, archivo: str) -> str:
         cuerpo += ["<h2>Gráficas</h2>", '<div class="figuras">' + "".join(
             f'<figure><img alt="{_e(f["titulo"])}" src="data:image/png;base64,{f["imagen_base64"]}"><figcaption>{_e(f["titulo"])}</figcaption></figure>' for f in figuras) + "</div>"]
     return _pagina("Reporte de análisis de los datos", archivo, "".join(cuerpo))
+
+
+# ==============================================================================
+# Reporte de predicciones
+# ==============================================================================
+
+COLORES_SEMAFORO = {"Verde": "#7bc67e", "Amarillo": "#f7d154", "Rojo": "#e06666"}
+ESTADOS_DE_FILA = {"predicho": "Con predicción", "sin_historia_suficiente": "Sin historia suficiente", "sin_nivel": "Sin nivel", "estacion_desconocida": "Estación desconocida"}
+MAX_FILAS_REPORTE = 20
+
+
+def reporte_predicciones(salida: pd.DataFrame, resumen: dict, archivo: str, version_modelo: str, diagnostico: dict) -> str:
+    """Identificación de cada registro, su predicción, su probabilidad y un resumen general.
+
+    salida: pipeline.tabla_de_salida (una fila por registro del archivo, con la fila de origen). resumen: pipeline.resumen. diagnostico: validacion.validar.
+    """
+    total = max(sum(resumen["distribucion"].values()), 1)
+    barra = "".join(f'<i style="width:{n / total * 100:.2f}%;background:{COLORES_SEMAFORO[c]}" title="{c}: {n}"></i>' for c, n in resumen["distribucion"].items() if n)
+    leyenda = " · ".join(f"{TEXTO_SEMAFORO[c]}: {_num(n)} ({_pct(n / total)})" for c, n in resumen["distribucion"].items())
+    actuales = resumen["actual"]["estaciones"]
+    cuerpo = [
+        _estado("info", "La pregunta que responde el modelo", resumen["pregunta"] + " El semáforo marca rojo cuando la probabilidad de rojo llega a "
+                f"{_pct(resumen['umbral_probabilidad_rojo'])}."),
+        _datos([(_num(resumen["predicciones"] + resumen["sin_historia_suficiente"] + resumen["sin_nivel"]), "registros del archivo"), (_num(resumen["predicciones"]), "predicciones generadas"),
+                (_num(resumen["sin_historia_suficiente"]), "sin historia suficiente"), (_num(resumen["sin_nivel"]), "sin nivel del río")]),
+        f"<p><b>Archivo:</b> {_e(archivo)} · <b>Modelo:</b> versión {_e(version_modelo)} · <b>Estado de la revisión previa:</b> {_e(diagnostico['estado'].replace('_', ' '))}</p>",
+        "<h2>Resumen general</h2>", f'<div class="barra">{barra}</div><p>{_e(leyenda)}</p>',
+    ]
+    if actuales:
+        cuerpo += ["<h2>Semáforo más reciente de cada estación</h2>",
+                   _tabla(["Estación", "Municipio", "Última hora con nivel", "Nivel (m)", "Probabilidad de rojo", "Semáforo"],
+                          [[e["nombre"], e["municipio"], _fecha(e["ultima_hora"]), _num(e["nivel_m"], 2), _pct(e["prob_rojo"]),
+                            _etiqueta(TEXTO_SEMAFORO.get(e["semaforo"], e["semaforo"] or "—"), {"Verde": "verde", "Amarillo": "ambar", "Rojo": "rojo"}.get(e["semaforo"], ""))] for e in actuales],
+                          numericas=(3, 4))]
+    con_prediccion = salida[salida["prob_rojo"].notna()]
+    if len(con_prediccion):
+        por_estacion = con_prediccion.groupby("estacion").agg(horas=("prob_rojo", "size"), maxima=("prob_rojo", "max"), rojas=("semaforo", lambda s: int((s == "Rojo").sum())))
+        cuerpo += ["<h2>Resumen por estación</h2>",
+                   _tabla(["Estación", "Horas con predicción", "Horas en rojo", "Mayor probabilidad de rojo"],
+                          [[codigo, _num(f.horas), _num(f.rojas), _pct(f.maxima, 1)] for codigo, f in por_estacion.sort_values("maxima", ascending=False).iterrows()], numericas=(1, 2, 3))]
+    mostrar = con_prediccion.sort_values(["prob_rojo", "fecha_hora"], ascending=[False, False]).head(MAX_FILAS_REPORTE)
+    if len(mostrar):
+        cuerpo.append(f"<h2>Las {_num(len(mostrar))} horas con mayor probabilidad de rojo</h2>")
+        cuerpo.append(_tabla(["Estación", "Fecha y hora", "Nivel (m)", "Lluvia (mm)", "Probabilidad de rojo", "Semáforo"],
+                             [[f.estacion, _fecha(f.fecha_hora), _num(f.nivel_m, 2), _num(f.lluvia_mm, 1), _pct(f.prob_rojo, 1), TEXTO_SEMAFORO.get(f.semaforo, "—") if f.semaforo else "—"]
+                              for f in mostrar.itertuples(index=False)], numericas=(2, 3, 4)))
+    cuerpo.append(f'<div class="nota">Aquí solo se muestran las horas de mayor atención para que el reporte se pueda leer. '
+                  f'Las predicciones de los {_num(len(salida))} registros están en el archivo CSV de predicciones.</div>')
+    cuerpo.append("<h2>Cómo leer este reporte</h2>")
+    cuerpo.append(_lista(["La probabilidad de rojo es lo que el modelo estima, no una certeza: indica qué tan parecida es la situación a las que antes terminaron en crecida.",
+                          "«Sin historia suficiente»: el modelo necesita al menos 7 días de datos anteriores de la estación para predecir.",
+                          "«Sin nivel»: esa hora no trae el nivel del río, así que no se puede predecir."]))
+    return _pagina("Reporte de predicciones", f"{archivo} · modelo versión {version_modelo}", "".join(cuerpo))
