@@ -55,7 +55,7 @@
         <button class="lateral__enlace" type="button" data-vista="consulta"><svg aria-hidden="true"><use href="img/iconos.svg#lluvia"></use></svg>Datos nuevos<span class="insignia" id="insignia-consulta" hidden></span></button>
         <button class="lateral__enlace" type="button" data-vista="datos"><svg aria-hidden="true"><use href="img/iconos.svg#carga"></use></svg>Cargar archivo</button>
         <button class="lateral__enlace" type="button" data-vista="modelo"><svg aria-hidden="true"><use href="img/iconos.svg#grafica"></use></svg>Actualizar el modelo</button>
-        <button class="lateral__enlace" type="button" data-vista="descargas"><svg aria-hidden="true"><use href="img/iconos.svg#descarga"></use></svg>Descargas</button>
+        <button class="lateral__enlace" type="button" data-vista="reportes"><svg aria-hidden="true"><use href="img/iconos.svg#archivo"></use></svg>Reportes y descargas</button>
         <button class="lateral__enlace" type="button" data-vista="actividad"><svg aria-hidden="true"><use href="img/iconos.svg#reloj"></use></svg>Actividad</button>
         <button class="lateral__enlace" type="button" data-vista="equipo"><svg aria-hidden="true"><use href="img/iconos.svg#candado"></use></svg>Administradores</button>
       </nav>
@@ -124,6 +124,17 @@
             </div>
             <div class="aviso" id="adm-aviso" role="status" aria-live="polite" hidden></div>
           </article>
+          <article class="tarjeta" id="adm-reportes" hidden>
+            <h2>Reportes para descargar</h2>
+            <p class="tarjeta__texto">Elija un archivo y descargue su reporte: si es compatible con el modelo, el análisis de sus datos o las predicciones que salen de él. Se abren en el navegador y se pueden imprimir o guardar como PDF.</p>
+            <div class="filtros"><label for="adm-reporte-archivo">Archivo</label><select id="adm-reporte-archivo"></select></div>
+            <div class="acciones" role="group" aria-label="Reportes del archivo">
+              <button class="boton boton--contorno-oscuro" id="adm-rep-compat" type="button"><svg aria-hidden="true"><use href="img/iconos.svg#escudo"></use></svg>Reporte de compatibilidad</button>
+              <button class="boton boton--contorno-oscuro" id="adm-rep-eda" type="button"><svg aria-hidden="true"><use href="img/iconos.svg#grafica"></use></svg>Reporte del análisis</button>
+              <button class="boton boton--contorno-oscuro" id="adm-rep-pred" type="button"><svg aria-hidden="true"><use href="img/iconos.svg#semaforo"></use></svg>Reporte de predicciones</button>
+            </div>
+            <div class="aviso" id="adm-rep-aviso" role="status" aria-live="polite" hidden></div>
+          </article>
           <article class="tarjeta" id="adm-resultado" hidden></article>
           <article class="tarjeta panel" id="adm-analisis" hidden></article>
         </section>
@@ -149,10 +160,42 @@
           <article class="tarjeta panel" id="mod-detalle" hidden></article>
         </section>
 
-        <!-- Descargas -->
-        <section id="vista-descargas" hidden>
+        <!-- Reportes -->
+        <section id="vista-reportes" hidden>
           <article class="tarjeta">
-            <h2>Datos publicados</h2>
+            <h2>Reportes de los datos</h2>
+            <p class="tarjeta__texto">Elija de qué datos quiere el reporte. Se ve aquí mismo y puede descargarlo en PDF.</p>
+            <div class="filtros">
+              <label for="rep-fuente">Datos</label>
+              <select id="rep-fuente"></select>
+            </div>
+            <div class="rep-opciones" id="rep-tipos"></div>
+          </article>
+          <article class="tarjeta">
+            <h2>Reporte de actualización del modelo</h2>
+            <p class="tarjeta__texto">Compara una versión nueva del modelo con otra (por defecto, la que está en uso): qué mejoró, qué empeoró y qué recomienda el sistema.</p>
+            <p class="vacio" id="rep-act-vacio">Cargando…</p>
+            <div class="filtros" id="rep-act-form" hidden>
+              <label for="rep-candidata">Versión nueva</label><select id="rep-candidata"></select>
+              <label for="rep-anterior">Comparar con</label><select id="rep-anterior"></select>
+              <button class="boton boton--primario boton--pequeno" id="rep-act-ver" type="button" data-generar="1">Ver reporte</button>
+            </div>
+          </article>
+          <div class="aviso" id="rep-aviso" role="status" aria-live="polite" hidden></div>
+          <article class="tarjeta" id="rep-vista" hidden>
+            <div class="rep-cabecera">
+              <h2 id="rep-titulo">Reporte</h2>
+              <div class="acciones-fila">
+                <button class="boton boton--primario boton--pequeno" id="rep-pdf" type="button"><svg aria-hidden="true"><use href="img/iconos.svg#descarga"></use></svg>Descargar PDF</button>
+                <button class="boton boton--contorno-oscuro boton--pequeno" id="rep-descargar" type="button">Descargar HTML</button>
+                <button class="boton boton--contorno-oscuro boton--pequeno" id="rep-csv" type="button" hidden>Todas las predicciones (CSV)</button>
+                <button class="boton-texto" id="rep-cerrar" type="button">Cerrar</button>
+              </div>
+            </div>
+            <iframe class="rep-marco" id="rep-marco" title="Vista del reporte" sandbox="allow-same-origin"></iframe>
+          </article>
+          <article class="tarjeta">
+            <h2>Descargar los datos publicados</h2>
             <p class="tarjeta__texto">Los datos combinados que usa el modelo: hora, nivel del río, lluvia y semáforo de cada hora.</p>
             <div class="filtros">
               <label for="desc-estacion">Estación</label>
@@ -164,7 +207,7 @@
             <div class="aviso" id="desc-aviso" role="status" aria-live="polite" hidden></div>
           </article>
           <article class="tarjeta">
-            <h2>Datos consultados a datos.gov.co</h2>
+            <h2>Descargar los lotes de datos nuevos</h2>
             <p class="tarjeta__texto">Cada consulta queda guardada como un lote. Puede descargar cualquiera, se haya confirmado o no.</p>
             <div id="desc-lotes"><p class="vacio">Cargando…</p></div>
           </article>
