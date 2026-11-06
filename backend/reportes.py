@@ -316,3 +316,102 @@ def reporte_predicciones(salida: pd.DataFrame, resumen: dict, archivo: str, vers
                           "«Sin historia suficiente»: el modelo necesita al menos 7 días de datos anteriores de la estación para predecir.",
                           "«Sin nivel»: esa hora no trae el nivel del río, así que no se puede predecir."]))
     return _pagina("Reporte de predicciones", f"{archivo} · modelo versión {version_modelo}", "".join(cuerpo))
+
+
+# ==============================================================================
+# Reporte de actualización del modelo
+# ==============================================================================
+
+METRICAS_DEL_REPORTE = [  # nombre en los metadatos, cómo se lee, cómo se muestra, ¿más es mejor?
+    ("Color acertado", "Veces que el color del semáforo coincidió con lo que pasó", "pct", True),
+    ("Rojos detectados", "Crecidas (rojo) que el modelo avisó", "pct", True),
+    ("Alertas rojas correctas", "Alertas rojas que de verdad eran crecidas", "pct", True),
+    ("F1 del rojo", "Puntaje del rojo (de 0 a 1; 1 sería perfecto)", "dec", True),
+    ("Rojos no detectados", "Crecidas que el modelo no avisó", "ent", False),
+    ("Falsas alarmas", "Alertas rojas que no eran crecidas", "ent", False),
+]
+ESTADOS_DE_VERSION = {"activo": ("En uso", "verde"), "candidato": ("Por decidir", "ambar"), "historico": ("Anterior", "")}
+RAZONES = {"contra": "En contra", "cuidado": "Con cuidado", "favor": "A favor", "nota": "Para tener en cuenta"}
+
+
+def _estado_de_version(v: dict) -> _Html:
+    clave = "descartada" if v.get("estado") == "historico" and v.get("decision") == "descartada" else v.get("estado")
+    texto, clase = ("Descartada", "") if clave == "descartada" else ESTADOS_DE_VERSION.get(clave, (clave, ""))
+    return _etiqueta(texto, clase)
+
+
+def _valor_de_metrica(valor, forma: str) -> str:
+    return "—" if valor is None else _pct(valor) if forma == "pct" else _num(valor, 2 if forma == "dec" else 0)
+
+
+def _cambio(antes, despues, mas_es_mejor: bool) -> _Html:
+    if antes is None or despues is None:
+        return _etiqueta("—")
+    if abs(despues - antes) < 0.005:
+        return _etiqueta("Igual")
+    return _etiqueta("Mejora", "verde") if (despues > antes) == mas_es_mejor else _etiqueta("Empeora", "rojo")
+
+
+def _ficha_de_version(v: dict) -> list:
+    m = v["metadatos"]
+    config = m.get("configuracion") or {}
+    periodo = m.get("periodo_datos") or [None, None]
+    return [_fecha(m.get("fecha_entrenamiento")), f"{_num(m.get('registros_entrenamiento'))} ejemplos", f"{_fecha(periodo[0], False)} a {_fecha(periodo[1], False)}",
+            f"{_num(len(m.get('variables_modelo') or []))} variables", f"Bosque aleatorio: {_num(config.get('n_estimators'))} árboles, profundidad máxima {_num(config.get('max_depth'))}",
+            _num((m.get("metrica_principal") or {}).get("valor_modelo"), 2), m.get("archivo_modelo") or "—"]
+
+
+def reporte_actualizacion(anterior: dict, candidata: dict, recomendacion: dict | None = None) -> str:
+    """Descripción de los datos nuevos, comparación entre la versión anterior y la candidata, métricas y la decisión registrada.
+
+    anterior y candidata: cada versión como la devuelve versiones.obtener (estado, decisión y metadatos). recomendacion: el consejo del sistema, si lo hay.
+    """
+    meta = candidata["metadatos"]
+    reentrenamiento = meta.get("reentrenamiento") or {}
+    analisis = meta.get("analisis_de_datos") or {}
+    antes = (anterior["metadatos"].get("metricas_validacion") or {}).get("Bosque aleatorio") or {}
+    despues = (meta.get("metricas_validacion") or {}).get("Bosque aleatorio") or {}
+    cuerpo = [_datos([(candidata["version"], "versión candidata"), (anterior["version"], "versión con la que se compara"),
+                      (_num(reentrenamiento.get("horas_nuevas_con_nivel")), "horas nuevas con nivel"), (_num(meta.get("registros_entrenamiento")), "ejemplos de entrenamiento")]),
+              "<h2>Los datos nuevos</h2>"]
+    if reentrenamiento.get("datos_nuevos_desde"):
+        cuerpo.append(f"<p>Son los datos que llegaron después del {_fecha(reentrenamiento['datos_nuevos_desde'], False)}, la fecha hasta la que llegaban los datos de la versión anterior.</p>")
+    compat, nuevos, conjunto = analisis.get("compatibilidad"), (analisis.get("nuevos") or {}).get("resumen"), (analisis.get("conjunto") or {}).get("resumen")
+    lineas = []
+    if compat:
+        n = compat["advertencias"]
+        estado_compat = "con errores" if compat["errores"] else f"sin errores y con {n} {'advertencia' if n == 1 else 'advertencias'}"
+        lineas.append(f"Compatibilidad con el modelo: {estado_compat} ({_num(compat['filas'])} horas revisadas).")
+    for texto, r in (("Datos nuevos", nuevos), ("Conjunto completo con el que se entrenó", conjunto)):
+        if r:
+            lineas.append(f"{texto}: {_num(r['filas'])} filas, {_num(r['porcentaje_celdas_faltantes'], 1)} % de celdas vacías, {_num(r['filas_duplicadas'])} filas duplicadas.")
+    cuerpo.append(_lista(lineas) if lineas else "<p>Esta versión no guardó el análisis de sus datos.</p>")
+    en_datos_nuevos = reentrenamiento.get("modelo_anterior_en_datos_nuevos")
+    if en_datos_nuevos:
+        cuerpo += [f"<h3>Cómo le fue a la versión {_e(anterior['version'])} con los datos nuevos</h3>",
+                   _datos([(_num(en_datos_nuevos["momentos"]), "horas analizadas"), (_num(en_datos_nuevos["con_rojo"]), "veces que llegó una crecida"),
+                           (_pct(en_datos_nuevos["Rojos detectados"]) if en_datos_nuevos["con_rojo"] else "—", "de esas crecidas las avisó"),
+                           (_num(en_datos_nuevos["Falsas alarmas"]), "falsas alarmas")]),
+                   '<div class="nota">Son horas que esa versión no vio al entrenarse: es la mejor señal de si sigue funcionando con lo que pasa hoy.</div>']
+    cuerpo += [f"<h2>Comparación: versión {_e(anterior['version'])} contra versión {_e(candidata['version'])}</h2>",
+               _tabla(["Qué se mide", f"Versión {anterior['version']}", f"Versión {candidata['version']}", "Cambio"],
+                      [[texto, _valor_de_metrica(antes.get(clave), forma), _valor_de_metrica(despues.get(clave), forma), _cambio(antes.get(clave), despues.get(clave), mejor)]
+                       for clave, texto, forma, mejor in METRICAS_DEL_REPORTE], numericas=(1, 2)),
+               '<div class="nota">Las dos versiones se probaron con periodos distintos, porque la nueva incluye los datos más recientes: la tabla es una guía y no una prueba exacta.</div>']
+    if recomendacion:
+        cuerpo += ["<h2>Lo que aconseja el sistema</h2>", f"<p><b>{_e(recomendacion['titulo'])}.</b> {_e(recomendacion['texto'])}</p>",
+                   _tabla(["", "Razón"], [[RAZONES.get(r["tipo"], r["tipo"]), r["texto"]] for r in recomendacion["razones"]])]
+    cuerpo += ["<h2>Fichas de las dos versiones</h2>",
+               _tabla(["", f"Versión {anterior['version']}", f"Versión {candidata['version']}"],
+                      [[titulo, a, b] for titulo, a, b in zip(["Fecha y hora de entrenamiento", "Registros utilizados", "Datos de", "Variables", "Algoritmo y configuración", "Puntaje del rojo", "Archivo del modelo"],
+                                                              _ficha_de_version(anterior), _ficha_de_version(candidata))]),
+               "<h2>Decisión registrada</h2>"]
+    if candidata.get("decidido_por"):
+        accion = {"activada": "Se puso en uso", "descartada": "Se descartó"}.get(candidata.get("decision"), "Decisión")
+        cuerpo.append(f"<p>{_estado_de_version(candidata)} {accion} la versión {_e(candidata['version'])} el {_fecha(candidata.get('decidido_en'))}, por {_e(candidata['decidido_por'])}.</p>"
+                      f"<p><b>Motivo:</b> {_e(candidata.get('justificacion'))}</p>")
+    else:
+        cuerpo.append(f"<p>{_estado_de_version(candidata)} Aún no hay una decisión registrada sobre la versión {_e(candidata['version'])}. "
+                      f"La versión {_e(anterior['version'])} sigue siendo la que está en uso.</p>")
+    cuerpo.append('<div class="nota">Ninguna versión se reemplaza sola: las dos se conservan hasta que una persona decide y explica por qué.</div>')
+    return _pagina("Reporte de actualización del modelo", f"Versión {candidata['version']} frente a la versión {anterior['version']}", "".join(cuerpo))
